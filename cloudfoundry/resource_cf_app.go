@@ -313,6 +313,10 @@ func resourceApp() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
+			"disable_blue_green_deployment": &schema.Schema{
+				Type:     schema.TypeBool,
+				Required: true,
+			},
 		},
 
 		// TODO: find a way to test that this is correctly forcing a new resource
@@ -360,7 +364,8 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		addContent []map[string]interface{}
 
-		defaultRoute string
+		defaultRoute, stageRoute, liveRoute string
+		disableBlueGreen                    bool
 
 		serviceBindings    []map[string]interface{}
 		hasServiceBindings bool
@@ -368,8 +373,12 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		routeConfig map[string]interface{}
 	)
 
+	_ = stageRoute
+	_ = liveRoute
+
 	app.Name = d.Get("name").(string)
 	app.SpaceGUID = d.Get("space").(string)
+
 	if v, ok = d.GetOk("ports"); ok {
 		p := []int{}
 		for _, vv := range v.(*schema.Set).List() {
@@ -436,6 +445,11 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		app.DockerCredentials = &vv
 	}
 
+	if v, ok = d.GetOk("disable_blue_green_deployment"); ok {
+		vv := v.(bool)
+		disableBlueGreen = vv
+	}
+
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
 
@@ -449,7 +463,20 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
 
-		if defaultRoute, err = validateRouteLegacy(routeConfig, "default_route", rm); err != nil {
+		if defaultRoute, err = validateRoute(routeConfig, "default_route", rm, disableBlueGreen); err != nil {
+			return err
+		}
+		if stageRoute, err = validateRoute(routeConfig, "stage_route", rm, disableBlueGreen); err != nil {
+			return err
+		}
+		if liveRoute, err = validateRoute(routeConfig, "live_route", rm, disableBlueGreen); err != nil {
+			return err
+		}
+
+		if len(stageRoute) > 0 && len(liveRoute) > 0 {
+
+		} else if len(stageRoute) > 0 || len(liveRoute) > 0 {
+			err = fmt.Errorf("both 'stage_route' and 'live_route' need to be provided to deploy the app using blue-green routing")
 			return err
 		}
 	}
@@ -673,6 +700,9 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
 	// tell terraform when a state change is applied and thus okay to persist
 	d.Partial(true)
 
+	var disableBlueGreen bool
+	disableBlueGreen = false
+
 	session := meta.(*cfapi.Session)
 	if session == nil {
 		return fmt.Errorf("client is nil")
@@ -680,6 +710,11 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	am := session.AppManager()
 	rm := session.RouteManager()
+
+	if v, ok := d.GetOk("disable_blue_green_deployment"); ok {
+		vv := v.(bool)
+		disableBlueGreen = vv
+	}
 
 	app := cfapi.CCApp{
 		ID: d.Id(),
@@ -736,7 +771,173 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
 		d.SetPartial("environment")
 	}
 
-	// update the application's service bindings (the necessary restage is dealt with later)
+	// if app restages/restarts and bg is enabled, use bg for deployment, otherwise there will be downtime
+	if !disableBlueGreen && restage {
+		var numInstanceNewApp int
+		var numInstanceOriginApp int
+		var timeoutduration time.Duration
+		var tmpd schema.ResourceData
+		var originAppName string
+
+		if v, ok := d.GetOk("instances"); ok {
+			vv := v.(int)
+			numInstanceNewApp = vv
+		}
+
+		if v, ok := d.GetOk("timeout"); ok {
+			vv := v.(int)
+			timeoutduration = time.Second * time.Duration(vv)
+		}
+
+		if v, ok := d.GetOk("name"); ok {
+			vv := v.(string)
+			originAppName = vv
+		}
+
+		// Rename origin app
+		originApp := cfapi.CCApp{ID: d.Id()}
+		originApp.Name = venerable(originAppName)
+
+		// Update origin app name
+		originApp, err = am.UpdateApp(originApp)
+		if err != nil {
+			return err
+		}
+		am.WaitForAppToStage(originApp, timeoutduration)
+		am.WaitForAppToStart(originApp, timeoutduration)
+
+		numInstanceOriginApp = *originApp.Instances
+
+		// Create new CCApp to update instance numbers only and to forbid restage/stops
+		originInstanceApp := cfapi.CCApp{ID: originApp.ID}
+		originInstanceApp.Instances = new(int)
+
+		// Create new App and start new app with one instance
+		tmpd = *d
+		tmpd.Set("instances", 1)
+		err = resourceAppCreate(&tmpd, meta)
+		if err != nil {
+			return err
+		}
+
+		// Create new CCApp to update instance numbers only and to forbid restage/stops
+		newApp := cfapi.CCApp{}
+		newApp, err = am.FindApp(tmpd.Get("name").(string)) // Find app, due resourceAppCreate doesn't return the guid
+		am.WaitForAppToStage(newApp, timeoutduration)
+		am.WaitForAppToStart(newApp, timeoutduration)
+		d.SetId(newApp.ID)
+
+		newAppInstances := cfapi.CCApp{ID: newApp.ID}
+		newAppInstances.Instances = new(int)
+
+		if numInstanceNewApp == numInstanceOriginApp { // Instance numbers aren't changed
+
+			if numInstanceOriginApp == 1 && numInstanceNewApp == 1 { // Single Instance case
+				err = am.DeleteApp(originApp.ID, true)
+				if err != nil {
+					return err
+				}
+			} else {
+				k := numInstanceOriginApp + 1
+
+				for index := 1; index < k; index++ {
+
+					// Delete origin App
+					if numInstanceOriginApp == index {
+						err = am.DeleteApp(originApp.ID, true)
+						if err != nil {
+							return err
+						}
+					} else {
+						// Scale origin app down
+						*originInstanceApp.Instances = numInstanceOriginApp - index
+						_, err = am.UpdateApp(originInstanceApp)
+						if err != nil {
+							return err
+						}
+						am.WaitForAppToStage(originInstanceApp, timeoutduration)
+						am.WaitForAppToStart(originInstanceApp, timeoutduration)
+					}
+					// Scale new app up
+					*newAppInstances.Instances = index
+					_, err = am.UpdateApp(newAppInstances)
+					if err != nil {
+						return err
+					}
+					am.WaitForAppToStage(newAppInstances, timeoutduration)
+					am.WaitForAppToStart(newAppInstances, timeoutduration)
+				}
+			}
+		} else if numInstanceOriginApp > numInstanceNewApp {
+			k := numInstanceOriginApp + 1
+
+			for index := 1; index < k; index++ {
+
+				// Delete origin App
+				if numInstanceOriginApp == index {
+					err = am.DeleteApp(originApp.ID, true)
+					if err != nil {
+						return err
+					}
+				} else {
+					// Scale origin app down
+					*originInstanceApp.Instances = numInstanceOriginApp - index
+					_, err = am.UpdateApp(originInstanceApp)
+					if err != nil {
+						return err
+					}
+					am.WaitForAppToStage(originInstanceApp, timeoutduration)
+					am.WaitForAppToStart(originInstanceApp, timeoutduration)
+				}
+
+				if index <= numInstanceNewApp {
+					*newAppInstances.Instances = index
+					_, err = am.UpdateApp(newAppInstances)
+					if err != nil {
+						return err
+					}
+					am.WaitForAppToStage(newAppInstances, timeoutduration)
+					am.WaitForAppToStart(newAppInstances, timeoutduration)
+				}
+			}
+
+		} else if numInstanceOriginApp < numInstanceNewApp {
+			k := numInstanceNewApp + 1
+
+			for index := 1; index < k; index++ {
+
+				// Delete origin App
+				if numInstanceOriginApp == index {
+					err = am.DeleteApp(originApp.ID, true)
+					if err != nil {
+						return err
+					}
+				} else if index < numInstanceOriginApp {
+					// Scale origin app down
+					*originInstanceApp.Instances = numInstanceOriginApp - index
+					_, err = am.UpdateApp(originInstanceApp)
+					if err != nil {
+						return err
+					}
+					am.WaitForAppToStage(originInstanceApp, timeoutduration)
+					am.WaitForAppToStart(originInstanceApp, timeoutduration)
+				}
+
+				*newAppInstances.Instances = index
+				_, err = am.UpdateApp(newAppInstances)
+				if err != nil {
+					return err
+				}
+				am.WaitForAppToStage(newAppInstances, timeoutduration)
+				am.WaitForAppToStart(newAppInstances, timeoutduration)
+			}
+		}
+
+		d.Set("instances", numInstanceNewApp)
+
+		return
+	}
+
 	if d.HasChange("service_binding") {
 
 		old, new := d.GetChange("service_binding")
@@ -1212,26 +1413,16 @@ func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (pat
 	return path, nil
 }
 
-func validateRoute(appID string, routeID string, rm *cfapi.RouteManager) error {
-	if mappings, err := rm.ReadRouteMappingsByRoute(routeID); err == nil && len(mappings) > 0 {
-		if len(mappings) == 1 {
-			if boundApp, ok := mappings[0]["app"]; ok && boundApp == appID {
-				return nil
-			}
-		}
-		return fmt.Errorf(
-			"route with id %s is already mapped. routes specificed in the 'routes' argument can only be mapped to one 'cf_app' resource",
-			routeID)
-	} else {
-		return err
-	}
-}
-
-func validateRouteLegacy(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager) (routeID string, err error) {
+func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager, disableBlueGreen bool) (routeID string, err error) {
 
 	if v, ok := routeConfig[route]; ok {
 
 		routeID = v.(string)
+
+		// Routes must bind to multiple apps in blue green deployment
+		if !disableBlueGreen {
+			return
+		}
 
 		var mappings []map[string]interface{}
 		if mappings, err = rm.ReadRouteMappingsByRoute(routeID); err == nil && len(mappings) > 0 {
@@ -1331,4 +1522,7 @@ func removeServiceBindings(delete []map[string]interface{},
 		}
 	}
 	return nil
+}
+func venerable(name string) string {
+	return name + "-venerable"
 }
