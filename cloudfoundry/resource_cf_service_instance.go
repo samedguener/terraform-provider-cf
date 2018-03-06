@@ -2,6 +2,7 @@ package cloudfoundry
 
 import (
 	"fmt"
+	"time"
 
 	"encoding/json"
 
@@ -45,6 +46,11 @@ func resourceServiceInstance() *schema.Resource {
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
 			},
+			"timeout": &schema.Schema{
+				Type:     schema.TypeInt,
+				Optional: true,
+				Default:  DefaultAppTimeout,
+			},
 			"recursive_delete": &schema.Schema{
 				Type:     schema.TypeBool,
 				Optional: true,
@@ -86,6 +92,13 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
 		return
 	}
+
+	// Check whetever service_instance exists and is in state 'succeeded'
+	timeout := time.Second * time.Duration(d.Get("timeout").(int))
+	if err = sm.WaitServiceInstanceToStart(id, timeout); err != nil {
+		return
+	}
+
 	session.Log.DebugMessage("New Service Instance : %# v", id)
 
 	// TODO deal with asynchronous responses
@@ -184,6 +197,12 @@ func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (er
 
 	err = sm.DeleteServiceInstance(d.Id(), recursiveDelete)
 	if err != nil {
+		return
+	}
+
+	// Check whetever service_instance is deleted and is in state 'succeeded'
+	timeout := time.Second * time.Duration(d.Get("timeout").(int))
+	if err = sm.WaitServiceInstanceToDelete(d.Id(), timeout); err != nil {
 		return
 	}
 

@@ -437,7 +437,7 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 	// Bind services
 	if v, hasServiceBindings = d.GetOk("service_binding"); hasServiceBindings {
-		if serviceBindings, err = addServiceBindings(app.ID, getListOfStructs(v), am, session.Log, session); err != nil {
+		if serviceBindings, err = addServiceBindings(app.ID, getListOfStructs(v), am, session.Log); err != nil {
 			return
 		}
 	}
@@ -744,7 +744,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 
 		var added []map[string]interface{}
-		if added, err = addServiceBindings(app.ID, bindingsToAdd, am, session.Log, session); err != nil {
+		if added, err = addServiceBindings(app.ID, bindingsToAdd, am, session.Log); err != nil {
 			return
 		}
 		if len(added) > 0 {
@@ -1075,9 +1075,7 @@ func updateMapping(old map[string]interface{}, new map[string]interface{},
 }
 
 func addServiceBindings(id string, add []map[string]interface{},
-	am *cfapi.AppManager, log *cfapi.Logger, session *cfapi.Session) (bindings []map[string]interface{}, err error) {
-
-	sm := session.ServiceManager()
+	am *cfapi.AppManager, log *cfapi.Logger) (bindings []map[string]interface{}, err error) {
 
 	var (
 		serviceInstanceID, bindingID string
@@ -1094,11 +1092,6 @@ func addServiceBindings(id string, add []map[string]interface{},
 		if v, ok := b["params"]; ok {
 			vv := v.(map[string]interface{})
 			params = &vv
-		}
-
-		// Check whetever service_instance exists and is in state 'succeeded'
-		if err = sm.WaitServiceInstanceToStart(serviceInstanceID, 600); err != nil {
-			return
 		}
 
 		if bindingID, bindingCredentials, err = am.CreateServiceBinding(id, serviceInstanceID, params); err != nil {
