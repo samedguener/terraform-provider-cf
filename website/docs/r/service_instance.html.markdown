@@ -36,6 +36,8 @@ The following arguments are supported:
 * `json_params` - (Optional, String) Json string of arbitrary parameters. Some services support providing additional configuration parameters within the provision request
 * `tags` - (Optional, List) List of instance tags. Some services provide a list of tags that Cloud Foundry delivers in [VCAP_SERVICES Env variables](https://docs.cloudfoundry.org/devguide/deploy-apps/environment-variable.html#VCAP-SERVICES)
 * `recursive_delete` - (Optional, Bool) Default: `false`. If set `true`, Cloud Foundry will delete service bindings, service keys, and routes associated with the service instance too.
+* `timeout` - (Optional, Integer) The timeout in seconds, which shall be waited until service instance is created. Default: 60 seconds
+
 ## Attributes Reference
 
 The following attributes are exported:
