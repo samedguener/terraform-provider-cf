@@ -586,7 +586,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	app.Buildpack = getChangedValueString("buildpack", &restage, d)
 	app.Environment = getChangedValueMap("environment", &restage, d)
 
-	if d.HasChange("service_binding") || d.HasChange("stopped") || d.HasChange("route") || d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
+	if d.HasChange("service_binding") || d.HasChange("stopped") || d.HasChange("route") || d.HasChange("url") || d.HasChange("docker_image") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
 		restage = true
 	}
 
