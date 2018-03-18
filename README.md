@@ -1,6 +1,17 @@
 Cloud Foundry Terraform Provider [![Build Status](https://travis-ci.org/mevansam/terraform-provider-cf.svg?branch=master)](https://travis-ci.org/mevansam/terraform-provider-cf)
 ================================
 
+About the fork
+--------
+This fork contains fixes and features, which were not implemented into the upstream repository.
+
+- [Asynchronous provisioning/deprovisioning and update of cf_service_instance](https://github.com/mevansam/terraform-provider-cf/issues/51)
+- [Application Binding to Service Instances fail](https://github.com/mevansam/terraform-provider-cf/issues/40)
+- [Deletion of Service Instances](https://github.com/mevansam/terraform-provider-cf/issues/36)
+- [Application Update fails](https://github.com/mevansam/terraform-provider-cf/issues/32)
+- [Support docker-based Applications](https://github.com/mevansam/terraform-provider-cf/pull/43)
+- [Blue/Green-Deployment](https://github.com/mevansam/terraform-provider-cf/pull/22)
+
 Overview
 --------
 
