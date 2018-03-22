@@ -271,7 +271,7 @@ func setRouteArguments(session *cfapi.Session, route cfapi.CCRoute, d *schema.Re
 	} else if route.Path == nil || len(*route.Path) == 0 {
 		d.Set("endpoint", fmt.Sprintf("%s.%s", *route.Hostname, domain.Name))
 	} else {
-		d.Set("endpoint", fmt.Sprintf("%s.%s/%s", *route.Hostname, domain.Name, *route.Path))
+		d.Set("endpoint", fmt.Sprintf("%s.%s%s", *route.Hostname, domain.Name, *route.Path))
 	}
 
 	return
