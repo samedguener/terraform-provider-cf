@@ -53,17 +53,61 @@ resource "cf_service_instance" "mysql" {
 }
 `
 
+const serviceInstanceResourceAsyncCreate = `
+
+data "cf_org" "org" {
+    name = "pcfdev-org"
+}
+data "cf_space" "space" {
+    name = "pcfdev-space"
+	org = "${data.cf_org.org.id}"
+}
+data "cf_service" "test-service" {
+	name = "test-service"
+	
+	depends_on = ["cf_service_broker.test-service-broker"]
+}
+
+resource "cf_app" "test-service-broker" {
+    name = "test-service-broker"
+	url = "file://service_broker/"
+	space = "${data.cf_space.space.id}"
+}
+
+resource "cf_service_broker" "test-service-broker {
+	name = "test-service-broker"
+	url = "http://test-service-broker.local.pcfdev.io"
+	depends_on = ["cf_app.test-service-broker"]
+}
+
+resource "cf_service_instance" "test-service-instance" {
+	name = "test-service-instance"
+    space = "${data.cf_space.space.id}"
+	service_plan = "${cf_service_broker.service_plans["test-service/test-async-only-plan"]}"
+	depends_on = ["cf_app.test-service-broker"]
+}
+`
+
+// TODO - Add Service Broker with async. service plans
 func TestAccServiceInstance_normal(t *testing.T) {
 
 	ref := "cf_service_instance.mysql"
+	refAsync := "cf_service_instance.test-service-instance"
 
 	resource.Test(t,
 		resource.TestCase{
 			PreCheck:     func() { testAccPreCheck(t) },
 			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckServiceInstanceDestroyed([]string{"mysql", "mysql-updated"}, "data.cf_space.space"),
+			CheckDestroy: testAccCheckServiceInstanceDestroyed([]string{"mysql", "mysql-updated", "test-service-instance"}, "data.cf_space.space"),
 			Steps: []resource.TestStep{
 
+				resource.TestStep{
+					Config: serviceInstanceResourceAsyncCreate,
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckServiceInstanceExists(refAsync),
+						resource.TestCheckResourceAttr(refAsync, "name", "test-service-instance"),
+					),
+				},
 				resource.TestStep{
 					Config: serviceInstanceResourceCreate,
 					Check: resource.ComposeTestCheckFunc(
