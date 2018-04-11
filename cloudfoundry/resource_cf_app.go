@@ -411,17 +411,19 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		disableBlueGreen = vv
 	}
 
-	// Download application binary / source asynchronously
+	// Download application binary
 	prepare := make(chan error)
+	appPath, err = prepareApp(app, d, session.Log)
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
 
-		// Download application binary / source asynchronously
-		go func() {
-			appPath, err = prepareApp(app, d, session.Log)
-			prepare <- err
-		}()
+		// Download application binary
+		appPath, err = prepareApp(app, d, session.Log)
+		if err != nil {
+			return
+		}
 	}
+
 	if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
@@ -453,12 +455,6 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 	upload := make(chan error)
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
-
-		// Upload application binary / source
-		// asynchronously once download has completed
-		if err = <-prepare; err != nil {
-			return
-		}
 
 		go func() {
 			err = am.UploadApp(app, appPath, addContent)
