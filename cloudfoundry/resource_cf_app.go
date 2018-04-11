@@ -411,9 +411,6 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		disableBlueGreen = vv
 	}
 
-	// Download application binary
-	prepare := make(chan error)
-	appPath, err = prepareApp(app, d, session.Log)
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
 
