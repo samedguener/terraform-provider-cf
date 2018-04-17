@@ -3,7 +3,7 @@ package cloudfoundry
 import (
 	"encoding/json"
 	"fmt"
-
+	"strings"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/structure"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
@@ -128,6 +128,10 @@ func resourceUserProvidedServiceRead(d *schema.ResourceData, meta interface{}) (
 
 	ups, err = sm.ReadUserProvidedService(d.Id())
 	if err != nil {
+		if strings.Contains(err.Error(), "status code: 404") {
+			d.SetId("")
+			err = nil
+		}
 		return
 	}
 
