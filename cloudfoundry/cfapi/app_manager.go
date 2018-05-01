@@ -410,7 +410,9 @@ func (am *AppManager) RestageApp(appID string, timeout time.Duration) (err error
 	}
 
 	resource := CCAppResource{}
-	_, err = am.ccGateway.PerformRequestForJSONResponse(request, &resource)
+	if _, err = am.ccGateway.PerformRequestForJSONResponse(request, &resource); err != nil {
+		return errors.New(fmt.Sprintf("Unable to restage %s: %s", appID, err))
+	}
 
 	app := resource.Entity
 	app.ID = resource.Metadata.GUID
