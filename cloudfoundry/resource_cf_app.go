@@ -15,7 +15,6 @@ import (
 	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
-	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/repo"
 )
 
 const (
@@ -305,8 +304,6 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		app cfapi.CCApp
 
-		appPath string
-
 		addContent []map[string]interface{}
 
 		defaultRoute, stageRoute, liveRoute string
@@ -376,11 +373,8 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		app.Environment = &vv
 	}
 
-	// Download application binary
-	appPath, err = prepareApp(app, d, session.Log)
-	if err != nil {
-		return
-	}
+	// Download application binary / source asynchronously
+	appPathChan, errChan := prepareApp(app, d, session.Log)
 
 	if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
 
@@ -417,8 +411,15 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	}()
 
+	// Upload application binary / source asynchronously once download has completed
 	upload := make(chan error)
 	go func() {
+		appPath := <-appPathChan
+		err := <-errChan
+		if err != nil {
+			upload <- err
+			return
+		}
 		err = am.UploadApp(app, appPath, addContent)
 		upload <- err
 	}()
@@ -659,7 +660,10 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 			addContent []map[string]interface{}
 		)
 
-		if appPath, err = prepareApp(app, d, session.Log); err != nil {
+		appPathChan, errChan := prepareApp(app, d, session.Log)
+		appPath = <-appPathChan
+		err = <-errChan
+		if err != nil {
 			return
 		}
 		if v, ok = d.GetOk("add_content"); ok {
@@ -819,62 +823,82 @@ func setAppArguments(app cfapi.CCApp, d *schema.ResourceData) {
 	d.Set("ports", schema.NewSet(resourceIntegerSet, ports))
 }
 
-func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (path string, err error) {
+func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (<-chan string, <-chan error) {
+	pathChan := make(chan string, 1)
+	errChan := make(chan error, 1)
 
 	if v, ok := d.GetOk("url"); ok {
-		url := v.(string)
+		go func() {
+			var path string
+			var err error
+			url := v.(string)
 
-		if strings.HasPrefix(url, "file://") {
-			path = url[7:]
-		} else {
+			if strings.HasPrefix(url, "file://") {
+				path = url[7:]
+			} else {
 
-			var (
-				resp *http.Response
+				var (
+					resp *http.Response
 
-				in  io.ReadCloser
-				out *os.File
-			)
+					in  io.ReadCloser
+					out *os.File
+				)
 
-			if out, err = ioutil.TempFile("", "cfapp"); err != nil {
-				return
+				if out, err = ioutil.TempFile("", "cfapp"); err == nil {
+					log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
+					if resp, err = http.Get(url); err == nil {
+						in = resp.Body
+						if _, err = io.Copy(out, in); err == nil {
+							if err = out.Close(); err == nil {
+								path = out.Name()
+							}
+						}
+					}
+				}
 			}
-
-			log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
-
-			if resp, err = http.Get(url); err != nil {
-				return
-			}
-			in = resp.Body
-			if _, err = io.Copy(out, in); err != nil {
-				return
-			}
-			if err = out.Close(); err != nil {
-				return
-			}
-
-			path = out.Name()
-		}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+			return
+		}()
 
 	} else {
 		log.UI.Say("Retrieving application %s source / binary.", terminal.EntityNameColor(app.Name))
 
-		var repository repo.Repository
-		if repository, err = getRepositoryFromConfig(d); err != nil {
-			return
-		}
+		_, isGithubRelease := d.GetOk("github_release")
+		repositoryChan, repoErrChan := getRepositoryFromConfigAsync(d)
+		go func() {
+			var path string
+			repository := <-repositoryChan
+			err := <-repoErrChan
+			if err != nil {
+				return
+			}
 
-		if _, ok := d.GetOk("github_release"); ok {
-			path = filepath.Dir(repository.GetPath())
-		} else {
-			path = repository.GetPath()
-		}
-	}
-	if err != nil {
-		return "", err
+			if isGithubRelease {
+				path = filepath.Dir(repository.GetPath())
+			} else {
+				path = repository.GetPath()
+			}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+		}()
 	}
 
-	log.UI.Say("Application downloaded to: %s", path)
-	return
+	return pathChan, errChan
+}
+
+func downloadAppFromURL(d *schema.ResourceData) {
+
+}
+
+func downloadAppSourceBinary(d *schema.ResourceData) {
+
 }
 
 func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager) (routeID string, err error) {
