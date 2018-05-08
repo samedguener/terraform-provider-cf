@@ -16,7 +16,6 @@ import (
 	"github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
-	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/repo"
 )
 
 const (
@@ -319,8 +318,6 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		app cfapi.CCApp
 
-		appPath string
-
 		addContent []map[string]interface{}
 
 		defaultRoute, stageRoute, liveRoute string
@@ -414,72 +411,126 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
 
-		// Download application binary
-		appPath, err = prepareApp(app, d, session.Log)
-		if err != nil {
+		// Download application binary / source asynchronously
+		appPathChan, errChan := prepareApp(app, d, session.Log)
+
+		if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
+
+			routeConfig = v.([]interface{})[0].(map[string]interface{})
+
+			if defaultRoute, err = validateRoute(routeConfig, "default_route", rm, disableBlueGreen); err != nil {
+				return
+			}
+			if stageRoute, err = validateRoute(routeConfig, "stage_route", rm, disableBlueGreen); err != nil {
+				return
+			}
+			if liveRoute, err = validateRoute(routeConfig, "live_route", rm, disableBlueGreen); err != nil {
+				return
+			}
+
+		}
+
+		// Create application
+		if app, err = am.CreateApp(app); err != nil {
 			return
 		}
-	}
+		// Delete application if an error occurs
+		defer func() {
+			e := &err
+			if *e != nil {
+				am.DeleteApp(app.ID, true)
+			}
+		}()
 
-	if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
-
-		routeConfig = v.([]interface{})[0].(map[string]interface{})
-
-		if defaultRoute, err = validateRoute(routeConfig, "default_route", rm, disableBlueGreen); err != nil {
-			return
-		}
-		if stageRoute, err = validateRoute(routeConfig, "stage_route", rm, disableBlueGreen); err != nil {
-			return
-		}
-		if liveRoute, err = validateRoute(routeConfig, "live_route", rm, disableBlueGreen); err != nil {
-			return
-		}
-
-	}
-
-	// Create application
-	if app, err = am.CreateApp(app); err != nil {
-		return
-	}
-	// Delete application if an error occurs
-	defer func() {
-		e := &err
-		if *e != nil {
-			am.DeleteApp(app.ID, true)
-		}
-	}()
-
-	upload := make(chan error)
-	// Skip if Docker repo is given
-	if _, ok := d.GetOk("docker_image"); !ok {
-
+		// Upload application binary / source asynchronously once download has completed
+		upload := make(chan error)
+		// Will be skipped if Docker repo is given - see other branch
 		go func() {
+			appPath := <-appPathChan
+			err := <-errChan
+			if err != nil {
+				upload <- err
+				return
+			}
 			err = am.UploadApp(app, appPath, addContent)
 			upload <- err
 		}()
-	}
+		// Bind services
+		if v, hasServiceBindings = d.GetOk("service_binding"); hasServiceBindings {
+			if serviceBindings, err = addServiceBindings(app.ID, getListOfStructs(v), am, session.Log); err != nil {
+				return
+			}
+		}
 
-	// Bind services
-	if v, hasServiceBindings = d.GetOk("service_binding"); hasServiceBindings {
-		if serviceBindings, err = addServiceBindings(app.ID, getListOfStructs(v), am, session.Log); err != nil {
+		// Bind default route
+		if len(defaultRoute) > 0 {
+			var mappingID string
+			if mappingID, err = rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
+				return
+			}
+			routeConfig["default_route_mapping_id"] = mappingID
+		}
+
+		if _, ok := d.GetOk("docker_image"); !ok {
+			// Start application if not stopped
+			// state once upload has completed
+			if err = <-upload; err != nil {
+				return
+			}
+		}
+	} else {
+		if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
+
+			routeConfig = v.([]interface{})[0].(map[string]interface{})
+
+			if defaultRoute, err = validateRoute(routeConfig, "default_route", rm, disableBlueGreen); err != nil {
+				return
+			}
+			if stageRoute, err = validateRoute(routeConfig, "stage_route", rm, disableBlueGreen); err != nil {
+				return
+			}
+			if liveRoute, err = validateRoute(routeConfig, "live_route", rm, disableBlueGreen); err != nil {
+				return
+			}
+
+		}
+
+		// Create application
+		if app, err = am.CreateApp(app); err != nil {
 			return
 		}
-	}
+		// Delete application if an error occurs
+		defer func() {
+			e := &err
+			if *e != nil {
+				am.DeleteApp(app.ID, true)
+			}
+		}()
 
-	// Bind default route
-	if len(defaultRoute) > 0 {
-		var mappingID string
-		if mappingID, err = rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
-			return
+		// Upload application binary / source asynchronously once download has completed
+		upload := make(chan error)
+		// Bind services
+		if v, hasServiceBindings = d.GetOk("service_binding"); hasServiceBindings {
+			if serviceBindings, err = addServiceBindings(app.ID, getListOfStructs(v), am, session.Log); err != nil {
+				return
+			}
 		}
-		routeConfig["default_route_mapping_id"] = mappingID
-	}
 
-	if _, ok := d.GetOk("docker_image"); !ok {
-		// Start application if not stopped
-		// state once upload has completed
-		if err = <-upload; err != nil {
-			return
+		// Bind default route
+		if len(defaultRoute) > 0 {
+			var mappingID string
+			if mappingID, err = rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
+				return
+			}
+			routeConfig["default_route_mapping_id"] = mappingID
+		}
+
+		if _, ok := d.GetOk("docker_image"); !ok {
+			// Start application if not stopped
+			// state once upload has completed
+			if err = <-upload; err != nil {
+				return
+			}
 		}
 	}
 
@@ -849,7 +900,10 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 			addContent []map[string]interface{}
 		)
 
-		if appPath, err = prepareApp(app, d, session.Log); err != nil {
+		appPathChan, errChan := prepareApp(app, d, session.Log)
+		appPath = <-appPathChan
+		err = <-errChan
+		if err != nil {
 			return
 		}
 		if v, ok = d.GetOk("add_content"); ok {
@@ -998,62 +1052,74 @@ func setAppArguments(app cfapi.CCApp, d *schema.ResourceData) {
 	d.Set("ports", schema.NewSet(resourceIntegerSet, ports))
 }
 
-func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (path string, err error) {
+func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (<-chan string, <-chan error) {
+	pathChan := make(chan string, 1)
+	errChan := make(chan error, 1)
 
 	if v, ok := d.GetOk("url"); ok {
-		url := v.(string)
+		go func() {
+			var path string
+			var err error
+			url := v.(string)
 
-		if strings.HasPrefix(url, "file://") {
-			path = url[7:]
-		} else {
+			if strings.HasPrefix(url, "file://") {
+				path = url[7:]
+			} else {
 
-			var (
-				resp *http.Response
+				var (
+					resp *http.Response
 
-				in  io.ReadCloser
-				out *os.File
-			)
+					in  io.ReadCloser
+					out *os.File
+				)
 
-			if out, err = ioutil.TempFile("", "cfapp"); err != nil {
-				return
+				if out, err = ioutil.TempFile("", "cfapp"); err == nil {
+					log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
+					if resp, err = http.Get(url); err == nil {
+						in = resp.Body
+						if _, err = io.Copy(out, in); err == nil {
+							if err = out.Close(); err == nil {
+								path = out.Name()
+							}
+						}
+					}
+				}
 			}
-
-			log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
-
-			if resp, err = http.Get(url); err != nil {
-				return
-			}
-			in = resp.Body
-			if _, err = io.Copy(out, in); err != nil {
-				return
-			}
-			if err = out.Close(); err != nil {
-				return
-			}
-
-			path = out.Name()
-		}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+			return
+		}()
 
 	} else {
 		log.UI.Say("Retrieving application %s source / binary.", terminal.EntityNameColor(app.Name))
 
-		var repository repo.Repository
-		if repository, err = getRepositoryFromConfig(d); err != nil {
-			return
-		}
+		_, isGithubRelease := d.GetOk("github_release")
+		repositoryChan, repoErrChan := getRepositoryFromConfigAsync(d)
+		go func() {
+			var path string
+			repository := <-repositoryChan
+			err := <-repoErrChan
+			if err != nil {
+				return
+			}
 
-		if _, ok := d.GetOk("github_release"); ok {
-			path = filepath.Dir(repository.GetPath())
-		} else {
-			path = repository.GetPath()
-		}
-	}
-	if err != nil {
-		return "", err
+			if isGithubRelease {
+				path = filepath.Dir(repository.GetPath())
+			} else {
+				path = repository.GetPath()
+			}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+		}()
 	}
 
-	log.UI.Say("Application downloaded to: %s", path)
-	return
+	return pathChan, errChan
 }
 
 func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager, disableBlueGreen bool) (routeID string, err error) {
