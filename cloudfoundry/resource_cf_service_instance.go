@@ -2,6 +2,7 @@ package cloudfoundry
 
 import (
 	"fmt"
+	"time"
 
 	"encoding/json"
 
@@ -20,6 +21,12 @@ func resourceServiceInstance() *schema.Resource {
 
 		Importer: &schema.ResourceImporter{
 			State: ImportStatePassthrough,
+		},
+
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(15 * time.Minute),
+			Update: schema.DefaultTimeout(15 * time.Minute),
+			Delete: schema.DefaultTimeout(15 * time.Minute),
 		},
 
 		Schema: map[string]*schema.Schema{
@@ -82,9 +89,13 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
 		return
 	}
-	session.Log.DebugMessage("New Service Instance : %# v", id)
 
-	// TODO deal with asynchronous responses
+	// Check whetever service_instance exists and is in state 'succeeded'
+	if err = sm.WaitServiceInstanceTo("create", id); err != nil {
+		return
+	}
+
+	session.Log.DebugMessage("New Service Instance : %# v", id)
 
 	d.SetId(id)
 
@@ -160,7 +171,13 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 	if _, err = sm.UpdateServiceInstance(id, name, servicePlan, params, tags); err != nil {
 		return
 	}
+
 	if err != nil {
+		return
+	}
+
+	// Check whetever service_instance exists and is in state 'succeeded'
+	if err = sm.WaitServiceInstanceTo("update", id); err != nil {
 		return
 	}
 
