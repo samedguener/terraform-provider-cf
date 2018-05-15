@@ -3,6 +3,8 @@ package cloudfoundry
 import (
 	"encoding/json"
 	"fmt"
+	"strings"
+
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/structure"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
@@ -52,11 +54,13 @@ func resourceUserProvidedService() *schema.Resource {
 			"credentials": &schema.Schema{
 				Type:          schema.TypeMap,
 				Optional:      true,
+				Sensitive:     true,
 				ConflictsWith: []string{"credentials_json"},
 			},
 			"credentials_json": &schema.Schema{
 				Type:             schema.TypeString,
 				Optional:         true,
+				Sensitive:        true,
 				ConflictsWith:    []string{"credentials"},
 				DiffSuppressFunc: structure.SuppressJsonDiff,
 			},
@@ -125,6 +129,10 @@ func resourceUserProvidedServiceRead(d *schema.ResourceData, meta interface{}) (
 
 	ups, err = sm.ReadUserProvidedService(d.Id())
 	if err != nil {
+		if strings.Contains(err.Error(), "status code: 404") {
+			d.SetId("")
+			err = nil
+		}
 		return
 	}
 
