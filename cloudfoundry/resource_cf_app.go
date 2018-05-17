@@ -709,6 +709,11 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		if numInstanceNewApp == numInstanceOriginApp { // Instance numbers aren't changed
 
 			if numInstanceOriginApp == 1 && numInstanceNewApp == 1 { // Single Instance case
+				if _, ok := d.GetOk("route"); !ok {
+					if _, err = shiftMapping(originApp.ID, newApp.ID, rm, session.Log); err != nil {
+						return
+					}
+				}
 				err = am.DeleteApp(originApp.ID, true)
 				if err != nil {
 					return err
@@ -720,6 +725,11 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 					// Delete origin App
 					if numInstanceOriginApp == index {
+						if _, ok := d.GetOk("route"); !ok {
+							if _, err = shiftMapping(originApp.ID, newApp.ID, rm, session.Log); err != nil {
+								return
+							}
+						}
 						err = am.DeleteApp(originApp.ID, true)
 						if err != nil {
 							return err
@@ -751,6 +761,11 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 				// Delete origin App
 				if numInstanceOriginApp == index {
+					if _, ok := d.GetOk("route"); !ok {
+						if _, err = shiftMapping(originApp.ID, newApp.ID, rm, session.Log); err != nil {
+							return
+						}
+					}
 					err = am.DeleteApp(originApp.ID, true)
 					if err != nil {
 						return err
@@ -784,6 +799,11 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 				// Delete origin App
 				if numInstanceOriginApp == index {
+					if _, ok := d.GetOk("route"); !ok {
+						if _, err = shiftMapping(originApp.ID, newApp.ID, rm, session.Log); err != nil {
+							return
+						}
+					}
 					err = am.DeleteApp(originApp.ID, true)
 					if err != nil {
 						return err
@@ -1171,6 +1191,38 @@ func updateMapping(old map[string]interface{}, new map[string]interface{},
 			}
 		}
 	}
+	return
+}
+
+func shiftMapping(originAppID string, newAppID string, rm *cfapi.RouteManager, log *cfapi.Logger) (newMappingID string,
+	err error) {
+	var routeMappings []map[string]interface{}
+	if routeMappings, err = rm.ReadRouteMappingsByApp(originAppID); err != nil || len(routeMappings) == 0 {
+		return
+	}
+
+	for _, routeMapping := range routeMappings {
+		mappingID := routeMapping["mapping_id"].(string)
+		routeID := routeMapping["route"].(string)
+		port := routeMapping["port"].(int)
+
+		if newMappingID, err = shiftRouteMapping(mappingID, routeID, newAppID, port, rm, log); err != nil {
+			return
+		}
+	}
+	return
+}
+
+func shiftRouteMapping(mappingID string, routeID string, newAppID string, port int, rm *cfapi.RouteManager,
+	log *cfapi.Logger) (newMappingID string, err error) {
+	if newMappingID, err = rm.CreateRouteMapping(routeID, newAppID, &port); err != nil {
+		return
+	}
+	log.DebugMessage("Create a route mapping with routeID %s, appID %s and port %d", routeID, newAppID, port)
+	if err = rm.DeleteRouteMapping(mappingID); err != nil {
+		return
+	}
+	log.DebugMessage("Delete a route mapping with routeID %s", mappingID)
 	return
 }
 
