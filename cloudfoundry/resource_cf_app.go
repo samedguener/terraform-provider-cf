@@ -1403,6 +1403,9 @@ func parseMap(paramMap map[string]interface{}, format string) (tmpMap map[string
 				// Nested Hashmaps are saved as strings for now,
 				// please refer to func addServiceBindings for reference behaviour
 				tmpMap[k.Interface().(string)] = fmt.Sprintf("%v", a)
+			} else if a, ok := v.MapIndex(k).Interface().([]interface{}); ok {
+				// Nested List of maps are saved as strings
+				tmpMap[k.Interface().(string)] = fmt.Sprintf("%v", a)
 			} else {
 				return nil, fmt.Errorf("something went terrible wrong, parsing 'credentials' at '%s'. There must be another variable type", k.Interface().(string))
 			}
