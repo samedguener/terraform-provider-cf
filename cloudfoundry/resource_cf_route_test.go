@@ -121,55 +121,29 @@ data "cf_space" "space" {
     name = "pcfdev-space"
 	org = "${data.cf_org.org.id}"
 }
-data "cf_service" "mysql" {
-    name = "p-mysql"
-}
-data "cf_service" "rmq" {
-    name = "p-rabbitmq"
-}
 
-resource "cf_route" "spring-music-base" {
+resource "cf_route" "test-app-base" {
 	domain = "${data.cf_domain.local.id}"
 	space = "${data.cf_space.space.id}"
-	hostname = "spring-music"
-    target = {app = "${cf_app.spring-music.id}"}
+	hostname = "test-app"
+    target = {app = "${cf_app.test-app.id}"}
 }
-resource "cf_route" "spring-music" {
+resource "cf_route" "test-app" {
 	domain = "${data.cf_domain.local.id}"
 	space = "${data.cf_space.space.id}"
-	hostname = "spring-music"
+	hostname = "test-app"
     path = "/api/v2/fizzbuzz/"  
-    target = {app = "${cf_app.spring-music.id}"}
+    target = {app = "${cf_app.test-app.id}"}
 }
-resource "cf_service_instance" "db" {
-	name = "db"
-    space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.mysql.service_plans.512mb}"
-}
-resource "cf_service_instance" "fs1" {
-	name = "fs1"
-    space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.rmq.service_plans.standard}"
-}
-resource "cf_app" "spring-music" {
-	name = "spring-music"
+resource "cf_app" "test-app" {
+	name = "test-app"
 	space = "${data.cf_space.space.id}"
-	memory = "768"
-	disk_quota = "512"
+	command = "test-app --ports=8080"
 	timeout = 1800
+    memory = "512"
 
-	url = "https://github.com/mevansam/spring-music/releases/download/v1.0/spring-music.war"
-
-	service_binding {
-		service_instance = "${cf_service_instance.db.id}"
-	}
-	service_binding {
-		service_instance = "${cf_service_instance.fs1.id}"
-	}
-
-	environment {
-		TEST_VAR_1 = "testval1"
-		TEST_VAR_2 = "testval2"
+	git {
+		url = "https://github.com/mevansam/test-app.git"
 	}
 }
 `
@@ -186,77 +160,43 @@ data "cf_space" "space" {
     name = "pcfdev-space"
 	org = "${data.cf_org.org.id}"
 }
-data "cf_service" "mysql" {
-    name = "p-mysql"
-}
-data "cf_service" "rmq" {
-    name = "p-rabbitmq"
-}
 
-resource "cf_route" "spring-music-base" {
+resource "cf_route" "test-app-base" {
 	domain = "${data.cf_domain.local.id}"
 	space = "${data.cf_space.space.id}"
-	hostname = "spring-music"
-    target = {app = "${cf_app.spring-music.id}"}
+	hostname = "test-app"
+    target = {app = "${cf_app.test-app.id}"}
 }
-resource "cf_route" "spring-music" {
+resource "cf_route" "test-app" {
 	domain = "${data.cf_domain.local.id}"
 	space = "${data.cf_space.space.id}"
-	hostname = "spring-music"
+	hostname = "test-app"
     path = "/api/v2/fizzbuzz/"  
-    target = {app = "${cf_app.spring-music.id}"}
+    target = {app = "${cf_app.test-app.id}"}
 }
-resource "cf_service_instance" "db" {
-	name = "db"
-    space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.mysql.service_plans.512mb}"
-}
-resource "cf_service_instance" "fs1" {
-	name = "fs1"
-    space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.rmq.service_plans.standard}"
-}
-resource "cf_service_instance" "fs2" {
-	name = "fs2"
-    space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.rmq.service_plans.standard}"
-}
-resource "cf_app" "spring-music" {
-	name = "spring-music-updated"
+resource "cf_app" "test-app" {
+	name = "test-app"
 	space = "${data.cf_space.space.id}"
-	memory = "1024"
-	disk_quota = "1024"
+	command = "test-app --ports=8080"
 	timeout = 1800
+    memory = "1024"
 
-	url = "https://github.com/mevansam/spring-music/releases/download/v1.0/spring-music.war"
-
-	service_binding {
-		service_instance = "${cf_service_instance.db.id}"
-	}
-	service_binding {
-		service_instance = "${cf_service_instance.fs2.id}"
-	}
-	service_binding {
-		service_instance = "${cf_service_instance.fs1.id}"
-	}
-
-	environment {
-		TEST_VAR_1 = "testval1"
-		TEST_VAR_2 = "testval2"
+	git {
+		url = "https://github.com/janosbinder/test-app.git"
 	}
 }
 `
 
 func TestAccRoute_multiple(t *testing.T) {
 
-	refRouteBase := "cf_route.spring-music-base"
-	refRoute := "cf_route.spring-music"
+	refRouteBase := "cf_route.test-app-base"
+	refRoute := "cf_route.test-app"
 
 	resource.Test(t,
 		resource.TestCase{
 			PreCheck:     func() { testAccPreCheck(t) },
 			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
+			CheckDestroy: testAccCheckAppDestroyed([]string{"test-app"}),
 			Steps: []resource.TestStep{
 
 
@@ -265,14 +205,14 @@ func TestAccRoute_multiple(t *testing.T) {
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckRouteExists(refRoute, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
 						}),
 						testAccCheckRouteExists(refRouteBase, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
@@ -285,14 +225,14 @@ func TestAccRoute_multiple(t *testing.T) {
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckRouteExists(refRoute, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
 						}),
 						testAccCheckRouteExists(refRouteBase, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
