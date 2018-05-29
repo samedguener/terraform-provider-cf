@@ -109,6 +109,140 @@ resource "cf_route" "test-app-route" {
 }
 `
 
+const multipleRoute = `
+
+data "cf_domain" "local" {
+    name = "%s"
+}
+data "cf_org" "org" {
+    name = "pcfdev-org"
+}
+data "cf_space" "space" {
+    name = "pcfdev-space"
+	org = "${data.cf_org.org.id}"
+}
+
+resource "cf_route" "test-app-base" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "test-app"
+    target = {app = "${cf_app.test-app.id}"}
+}
+resource "cf_route" "test-app" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "test-app"
+    path = "/api/v2/fizzbuzz/"  
+    target = {app = "${cf_app.test-app.id}"}
+}
+resource "cf_app" "test-app" {
+	name = "test-app"
+	space = "${data.cf_space.space.id}"
+	command = "test-app --ports=8080"
+	timeout = 1800
+    memory = "512"
+
+	git {
+		url = "https://github.com/mevansam/test-app.git"
+	}
+}
+`
+
+const multipleRouteUpdate = `
+
+data "cf_domain" "local" {
+    name = "%s"
+}
+data "cf_org" "org" {
+    name = "pcfdev-org"
+}
+data "cf_space" "space" {
+    name = "pcfdev-space"
+	org = "${data.cf_org.org.id}"
+}
+
+resource "cf_route" "test-app-base" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "test-app"
+    target = {app = "${cf_app.test-app.id}"}
+}
+resource "cf_route" "test-app" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "test-app"
+    path = "/api/v2/fizzbuzz/"  
+    target = {app = "${cf_app.test-app.id}"}
+}
+resource "cf_app" "test-app" {
+	name = "test-app"
+	space = "${data.cf_space.space.id}"
+	command = "test-app --ports=8080"
+	timeout = 1800
+    memory = "1024"
+
+	git {
+		url = "https://github.com/janosbinder/test-app.git"
+	}
+}
+`
+
+func TestAccRoute_multiple(t *testing.T) {
+
+	refRouteBase := "cf_route.test-app-base"
+	refRoute := "cf_route.test-app"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"test-app"}),
+			Steps: []resource.TestStep{
+
+
+				resource.TestStep{
+					Config: fmt.Sprintf(multipleRoute, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckRouteExists(refRoute, func() (err error) {
+
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						testAccCheckRouteExists(refRouteBase, func() (err error) {
+
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(multipleRouteUpdate, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckRouteExists(refRoute, func() (err error) {
+
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						testAccCheckRouteExists(refRouteBase, func() (err error) {
+
+							if err = assertHTTPResponse("https://test-app."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+					),
+				},
+			},
+		})
+}
+
 func TestAccRoute_normal(t *testing.T) {
 
 	refRoute := "cf_route.test-app-route"
