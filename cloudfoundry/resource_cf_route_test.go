@@ -109,6 +109,200 @@ resource "cf_route" "test-app-route" {
 }
 `
 
+const multipleRoute = `
+
+data "cf_domain" "local" {
+    name = "%s"
+}
+data "cf_org" "org" {
+    name = "pcfdev-org"
+}
+data "cf_space" "space" {
+    name = "pcfdev-space"
+	org = "${data.cf_org.org.id}"
+}
+data "cf_service" "mysql" {
+    name = "p-mysql"
+}
+data "cf_service" "rmq" {
+    name = "p-rabbitmq"
+}
+
+resource "cf_route" "spring-music-base" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "spring-music"
+    target = {app = "${cf_app.spring-music.id}"}
+}
+resource "cf_route" "spring-music" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "spring-music"
+    path = "/api/v2/fizzbuzz/"  
+    target = {app = "${cf_app.spring-music.id}"}
+}
+resource "cf_service_instance" "db" {
+	name = "db"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.mysql.service_plans.512mb}"
+}
+resource "cf_service_instance" "fs1" {
+	name = "fs1"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.rmq.service_plans.standard}"
+}
+resource "cf_app" "spring-music" {
+	name = "spring-music"
+	space = "${data.cf_space.space.id}"
+	memory = "768"
+	disk_quota = "512"
+	timeout = 1800
+
+	url = "https://github.com/mevansam/spring-music/releases/download/v1.0/spring-music.war"
+
+	service_binding {
+		service_instance = "${cf_service_instance.db.id}"
+	}
+	service_binding {
+		service_instance = "${cf_service_instance.fs1.id}"
+	}
+
+	environment {
+		TEST_VAR_1 = "testval1"
+		TEST_VAR_2 = "testval2"
+	}
+}
+`
+
+const multipleRouteUpdate = `
+
+data "cf_domain" "local" {
+    name = "%s"
+}
+data "cf_org" "org" {
+    name = "pcfdev-org"
+}
+data "cf_space" "space" {
+    name = "pcfdev-space"
+	org = "${data.cf_org.org.id}"
+}
+data "cf_service" "mysql" {
+    name = "p-mysql"
+}
+data "cf_service" "rmq" {
+    name = "p-rabbitmq"
+}
+
+resource "cf_route" "spring-music-base" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "spring-music"
+    target = {app = "${cf_app.spring-music.id}"}
+}
+resource "cf_route" "spring-music" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "spring-music"
+    path = "/api/v2/fizzbuzz/"  
+    target = {app = "${cf_app.spring-music.id}"}
+}
+resource "cf_service_instance" "db" {
+	name = "db"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.mysql.service_plans.512mb}"
+}
+resource "cf_service_instance" "fs1" {
+	name = "fs1"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.rmq.service_plans.standard}"
+}
+resource "cf_service_instance" "fs2" {
+	name = "fs2"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.rmq.service_plans.standard}"
+}
+resource "cf_app" "spring-music" {
+	name = "spring-music-updated"
+	space = "${data.cf_space.space.id}"
+	memory = "1024"
+	disk_quota = "1024"
+	timeout = 1800
+
+	url = "https://github.com/mevansam/spring-music/releases/download/v1.0/spring-music.war"
+
+	service_binding {
+		service_instance = "${cf_service_instance.db.id}"
+	}
+	service_binding {
+		service_instance = "${cf_service_instance.fs2.id}"
+	}
+	service_binding {
+		service_instance = "${cf_service_instance.fs1.id}"
+	}
+
+	environment {
+		TEST_VAR_1 = "testval1"
+		TEST_VAR_2 = "testval2"
+	}
+}
+`
+
+func TestAccRoute_multiple(t *testing.T) {
+
+	refRouteBase := "cf_route.spring-music-base"
+	refRoute := "cf_route.spring-music"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
+			Steps: []resource.TestStep{
+
+
+				resource.TestStep{
+					Config: fmt.Sprintf(multipleRoute, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckRouteExists(refRoute, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						testAccCheckRouteExists(refRouteBase, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(multipleRouteUpdate, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckRouteExists(refRoute, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						testAccCheckRouteExists(refRouteBase, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+					),
+				},
+			},
+		})
+}
+
 func TestAccRoute_normal(t *testing.T) {
 
 	refRoute := "cf_route.test-app-route"
