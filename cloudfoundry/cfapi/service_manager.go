@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/url"
 	"strings"
-	"time"
 
 	"code.cloudfoundry.org/cli/cf/api"
 	"code.cloudfoundry.org/cli/cf/api/resources"
@@ -14,7 +13,6 @@ import (
 	"code.cloudfoundry.org/cli/cf/errors"
 	"code.cloudfoundry.org/cli/cf/models"
 	"code.cloudfoundry.org/cli/cf/net"
-	"code.cloudfoundry.org/cli/cf/terminal"
 )
 
 // ServiceManager -
@@ -102,11 +100,10 @@ type CCServiceBrokerResource struct {
 
 // CCServiceInstance -
 type CCServiceInstance struct {
-	Name            string                 `json:"name"`
-	SpaceGUID       string                 `json:"space_guid"`
-	ServicePlanGUID string                 `json:"service_plan_guid"`
-	Tags            []string               `json:"tags,omitempty"`
-	LastOperation   map[string]interface{} `json:"last_operation"`
+	Name            string   `json:"name"`
+	SpaceGUID       string   `json:"space_guid"`
+	ServicePlanGUID string   `json:"service_plan_guid"`
+	Tags            []string `json:"tags,omitempty"`
 }
 
 // CCServiceInstanceResource -
@@ -415,7 +412,7 @@ func (sm *ServiceManager) DeleteServicePlanAccess(servicePlanAccessGUID string) 
 func (sm *ServiceManager) CreateServiceInstance(name, servicePlanID, spaceID string,
 	params map[string]interface{}, tags []string) (id string, err error) {
 
-	path := "/v2/service_instances?accepts_incomplete=true"
+	path := "/v2/service_instances"
 	request := models.ServiceInstanceCreateRequest{
 		Name:      name,
 		PlanGUID:  servicePlanID,
@@ -440,7 +437,7 @@ func (sm *ServiceManager) CreateServiceInstance(name, servicePlanID, spaceID str
 func (sm *ServiceManager) UpdateServiceInstance(serviceInstanceID, name, servicePlanID string,
 	params map[string]interface{}, tags []string) (serviceInstance CCServiceInstance, err error) {
 
-	path := fmt.Sprintf("/v2/service_instances/%s?accepts_incomplete=true", serviceInstanceID)
+	path := fmt.Sprintf("/v2/service_instances/%s", serviceInstanceID)
 	request := CCServiceInstanceUpdateRequest{
 		Name:            name,
 		ServicePlanGUID: servicePlanID,
@@ -454,9 +451,7 @@ func (sm *ServiceManager) UpdateServiceInstance(serviceInstanceID, name, service
 	}
 
 	resource := CCServiceInstanceResource{}
-	if err = sm.ccGateway.UpdateResource(sm.apiEndpoint, path, bytes.NewReader(jsonBytes), &resource); err != nil {
-		return CCServiceInstance{}, err
-	}
+	err = sm.ccGateway.UpdateResource(sm.apiEndpoint, path, bytes.NewReader(jsonBytes), &resource)
 
 	serviceInstance = resource.Entity
 	return
@@ -474,48 +469,6 @@ func (sm *ServiceManager) ReadServiceInstance(serviceInstanceID string) (service
 	}
 
 	serviceInstance = resource.Entity
-	return
-}
-
-// WaitServiceInstanceTo -
-func (sm *ServiceManager) WaitServiceInstanceTo(operationType string, serviceInstanceID string) (err error) {
-	sm.log.UI.Say("Waiting for service instance %s to finish starting ..", terminal.EntityNameColor(serviceInstanceID))
-
-	c := make(chan error)
-	go func() {
-
-		var err error
-		var serviceInstance CCServiceInstance
-
-		for {
-			if serviceInstance, err = sm.ReadServiceInstance(serviceInstanceID); err != nil {
-				c <- err
-				return
-			}
-
-			if serviceInstance.LastOperation["type"] == operationType {
-				state := serviceInstance.LastOperation["state"]
-
-				switch state {
-				case "succeeded":
-					c <- nil
-					return
-				case "failed":
-					c <- fmt.Errorf("service instance %s crashed", serviceInstanceID)
-					return
-				}
-			}
-			time.Sleep(appStatePingSleep)
-		}
-	}()
-
-	select {
-	case err = <-c:
-		if err != nil {
-			return
-		}
-		sm.log.UI.Say("%s finished starting ...", terminal.EntityNameColor(serviceInstanceID))
-	}
 	return
 }
 
