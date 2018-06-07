@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"sync"
+	"time"
 
 	"golang.org/x/sync/semaphore"
 
@@ -23,6 +24,12 @@ func resourceServiceInstance() *schema.Resource {
 
 		Importer: &schema.ResourceImporter{
 			State: ImportStatePassthrough,
+		},
+
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(15 * time.Minute),
+			Update: schema.DefaultTimeout(15 * time.Minute),
+			Delete: schema.DefaultTimeout(15 * time.Minute),
 		},
 
 		SchemaVersion: 1,
@@ -95,9 +102,13 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
 		return err
 	}
-	session.Log.DebugMessage("New Service Instance : %# v", id)
 
-	// TODO deal with asynchronous responses
+	// Check whetever service_instance exists and is in state 'succeeded'
+	if err = sm.WaitServiceInstanceTo("create", id); err != nil {
+		return err
+	}
+
+	session.Log.DebugMessage("New Service Instance : %# v", id)
 
 	d.SetId(id)
 
@@ -178,12 +189,23 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 		return err
 	}
 
+	if err != nil {
+		return err
+	}
+
+	// Check whetever service_instance exists and is in state 'succeeded'
+	if err = sm.WaitServiceInstanceTo("update", id); err != nil {
+		return err
+	}
+
 	return nil
 }
 
 func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (err error) {
 
 	session := meta.(*cfapi.Session)
+	id := d.Id()
+
 	if session == nil {
 		return fmt.Errorf("client is nil")
 	}
@@ -195,14 +217,44 @@ func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (er
 		defer (*sem).Release(1)
 	}
 
-	err = sm.DeleteServiceInstance(d.Id())
-	if err != nil {
+	if err = sm.DeleteServiceInstance(id); err != nil {
+		return err
+	}
+
+	// Check whether service_instance has been indeed deleted (sometimes takes very long))
+	if err = sm.WaitDeletionServiceInstance(id); err != nil {
 		return err
 	}
 
 	session.Log.DebugMessage("Deleted Service Instance : %s", d.Id())
 
 	return nil
+}
+
+func resourceServiceInstanceImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	session := meta.(*cfapi.Session)
+
+	if session == nil {
+		return nil, fmt.Errorf("client is nil")
+	}
+
+	sm := session.ServiceManager()
+
+	serviceinstance, err := sm.ReadServiceInstance(d.Id())
+
+	if err != nil {
+		return nil, err
+	}
+
+	d.Set("name", serviceinstance.Name)
+	d.Set("service_plan", serviceinstance.ServicePlanGUID)
+	d.Set("space", serviceinstance.SpaceGUID)
+	d.Set("tags", serviceinstance.Tags)
+
+	// json_param can't be retrieved from CF, please inject manually if necessary
+	d.Set("json_param", "")
+
+	return []*schema.ResourceData{d}, nil
 }
 
 // #######################
