@@ -74,14 +74,14 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 
 	if len(jsonParameters) > 0 {
 		if err = json.Unmarshal([]byte(jsonParameters), &params); err != nil {
-			return
+			return err
 		}
 	}
 
 	sm := session.ServiceManager()
 
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
-		return
+		return err
 	}
 	session.Log.DebugMessage("New Service Instance : %# v", id)
 
@@ -89,7 +89,7 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 
 	d.SetId(id)
 
-	return
+	return nil
 }
 
 func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err error) {
@@ -109,7 +109,7 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 			d.SetId("")
 			err = nil
 		}
-		return
+		return err
 	}
 
 	d.Set("name", serviceInstance.Name)
@@ -128,7 +128,7 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 
 	session.Log.DebugMessage("Read Service Instance : %# v", serviceInstance)
 
-	return
+	return nil
 }
 
 func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (err error) {
@@ -154,7 +154,7 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 
 	if len(jsonParameters) > 0 {
 		if err = json.Unmarshal([]byte(jsonParameters), &params); err != nil {
-			return
+			return err
 		}
 	}
 
@@ -162,14 +162,8 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 		tags = append(tags, v.(string))
 	}
 
-	if _, err = sm.UpdateServiceInstance(id, name, servicePlan, params, tags); err != nil {
-		return
-	}
-	if err != nil {
-		return
-	}
-
-	return
+	_, err = sm.UpdateServiceInstance(id, name, servicePlan, params, tags)
+	return err
 }
 
 func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (err error) {
@@ -184,10 +178,10 @@ func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (er
 
 	err = sm.DeleteServiceInstance(d.Id())
 	if err != nil {
-		return
+		return err
 	}
 
 	session.Log.DebugMessage("Deleted Service Instance : %s", d.Id())
 
-	return
+	return nil
 }
