@@ -1,10 +1,11 @@
 package cloudfoundry
 
 import (
-	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
+
+	"encoding/json"
 
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
@@ -80,26 +81,26 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 
 	if len(jsonParameters) > 0 {
 		if err = json.Unmarshal([]byte(jsonParameters), &params); err != nil {
-			return
+			return err
 		}
 	}
 
 	sm := session.ServiceManager()
 
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
-		return
+		return err
 	}
 
 	// Check whetever service_instance exists and is in state 'succeeded'
 	if err = sm.WaitServiceInstanceTo("create", id); err != nil {
-		return
+		return err
 	}
 
 	session.Log.DebugMessage("New Service Instance : %# v", id)
 
 	d.SetId(id)
 
-	return
+	return nil
 }
 
 func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err error) {
@@ -119,7 +120,7 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 			d.SetId("")
 			err = nil
 		}
-		return
+		return err
 	}
 
 	d.Set("name", serviceInstance.Name)
@@ -138,7 +139,7 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 
 	session.Log.DebugMessage("Read Service Instance : %# v", serviceInstance)
 
-	return
+	return nil
 }
 
 func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (err error) {
@@ -164,7 +165,7 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 
 	if len(jsonParameters) > 0 {
 		if err = json.Unmarshal([]byte(jsonParameters), &params); err != nil {
-			return
+			return err
 		}
 	}
 
@@ -173,24 +174,26 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 	}
 
 	if _, err = sm.UpdateServiceInstance(id, name, servicePlan, params, tags); err != nil {
-		return
+		return err
 	}
 
 	if err != nil {
-		return
+		return err
 	}
 
 	// Check whetever service_instance exists and is in state 'succeeded'
 	if err = sm.WaitServiceInstanceTo("update", id); err != nil {
-		return
+		return err
 	}
 
-	return
+	return nil
 }
 
 func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (err error) {
 
 	session := meta.(*cfapi.Session)
+	id := d.Id()
+
 	if session == nil {
 		return fmt.Errorf("client is nil")
 	}
@@ -198,12 +201,42 @@ func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (er
 
 	sm := session.ServiceManager()
 
-	err = sm.DeleteServiceInstance(d.Id())
-	if err != nil {
-		return
+	if err = sm.DeleteServiceInstance(id); err != nil {
+		return err
+	}
+
+	// Check whether service_instance has been indeed deleted (sometimes takes very long))
+	if err = sm.WaitDeletionServiceInstance(id); err != nil {
+		return err
 	}
 
 	session.Log.DebugMessage("Deleted Service Instance : %s", d.Id())
 
-	return
+	return nil
+}
+
+func resourceServiceInstanceImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	session := meta.(*cfapi.Session)
+
+	if session == nil {
+		return nil, fmt.Errorf("client is nil")
+	}
+
+	sm := session.ServiceManager()
+
+	serviceinstance, err := sm.ReadServiceInstance(d.Id())
+
+	if err != nil {
+		return nil, err
+	}
+
+	d.Set("name", serviceinstance.Name)
+	d.Set("service_plan", serviceinstance.ServicePlanGUID)
+	d.Set("space", serviceinstance.SpaceGUID)
+	d.Set("tags", serviceinstance.Tags)
+
+	// json_param can't be retrieved from CF, please inject manually if necessary
+	d.Set("json_param", "")
+
+	return []*schema.ResourceData{d}, nil
 }

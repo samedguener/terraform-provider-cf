@@ -12,7 +12,7 @@ Provides a Cloud Foundry resource for managing Cloud Foundry [Service Instances]
 
 ## Example Usage
 
-The following is a Service Instance created within the referenced space and service plan. 
+The following is a Service Instance created in the referenced space with the specified service plan. 
 
 ```
 data "cf_service" "redis" {
@@ -44,8 +44,14 @@ The following attributes are exported:
 
 ## Import
 
-The current Service Instance can be imported using the `service_broker`, e.g.
+An existing Service Instance can be imported using its guid, e.g.
 
 ```
 $ terraform import cf_service.redis a-guid
 ```
+
+## Timeouts
+
+* `create` - Default: 15 mins. Terraform will return an error if the resource was not deployed in the given timeframe.
+* `delete` - Default: 15 mins. Terraform will return an error if the resource was not deleted in the given timeframe.
+* `update` - Default: 15 mins. Terraform will return an error if the resource was not dupdated in the given timeframe.
