@@ -8,7 +8,6 @@ import (
 
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/terraform"
-	"github.com/kr/pretty"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
 )
 
@@ -429,8 +428,8 @@ func testAccCheckAppExists(resApp string, validate func() error) resource.TestCh
 				if binding != nil && values["binding_id"] == binding["binding_id"] {
 					if err2 := assertMapEquals("credentials", values, binding["credentials"].(map[string]interface{})); err2 != nil {
 						session.Log.LogMessage(
-							"Crendentials for service instance %s do not match:\nactual=%# v\nexpected=% #v\n",
-							serviceInstanceID, pretty.Formatter(values), pretty.Formatter(binding["credentials"]))
+							"Credentials for service instance %s do not match: %s",
+							serviceInstanceID, err2.Error())
 						return false
 					}
 					return true
@@ -503,7 +502,7 @@ func testAccCheckAppDestroyed(apps []string) resource.TestCheckFunc {
 
 		session := testAccProvider.Meta().(*cfapi.Session)
 		for _, a := range apps {
-			if _, err := session.AppManager().FindApp(a); err != nil {
+			if _, err := session.AppManager().FindApp(a, ""); err != nil {
 				switch err.(type) {
 				case *errors.ModelNotFoundError:
 					continue

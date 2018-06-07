@@ -102,6 +102,8 @@ type CCServiceBrokerResource struct {
 
 // CCServiceInstance -
 type CCServiceInstance struct {
+	ID string
+
 	Name            string                 `json:"name"`
 	SpaceGUID       string                 `json:"space_guid"`
 	ServicePlanGUID string                 `json:"service_plan_guid"`
@@ -492,6 +494,7 @@ func (sm *ServiceManager) UpdateServiceInstance(
 	}
 
 	serviceInstance = resource.Entity
+	serviceInstance.ID = resource.Metadata.GUID
 	return serviceInstance, nil
 }
 
@@ -504,6 +507,7 @@ func (sm *ServiceManager) ReadServiceInstance(serviceInstanceID string) (service
 		return CCServiceInstance{}, err
 	}
 	serviceInstance = resource.Entity
+	serviceInstance.ID = resource.Metadata.GUID
 	return serviceInstance, nil
 }
 
@@ -613,6 +617,7 @@ func (sm *ServiceManager) FindServiceInstance(name string, spaceID string) (serv
 		func(resource interface{}) bool {
 			if sp, ok := resource.(CCServiceInstanceResource); ok {
 				serviceInstance = sp.Entity // there should 1 or 0 instances in the space with that name
+				serviceInstance.ID = sp.Metadata.GUID
 				found = true
 				return false
 			}
@@ -780,6 +785,7 @@ func (sm *ServiceManager) FindServiceKey(name string, serviceInstanceID string) 
 			if sk, ok := resource.(CCServiceKeyResource); ok {
 				if sk.Entity.ServiceGUID == serviceInstanceID {
 					serviceKey = sk.Entity
+					serviceKey.ID = sk.Metadata.GUID
 					found = true
 					return false
 				}

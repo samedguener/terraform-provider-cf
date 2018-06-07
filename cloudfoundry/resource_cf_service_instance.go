@@ -2,6 +2,7 @@ package cloudfoundry
 
 import (
 	"fmt"
+	"strings"
 	"time"
 
 	"encoding/json"
@@ -115,6 +116,10 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 
 	serviceInstance, err = sm.ReadServiceInstance(d.Id())
 	if err != nil {
+		if strings.Contains(err.Error(), "status code: 404") {
+			d.SetId("")
+			err = nil
+		}
 		return err
 	}
 
