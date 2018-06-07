@@ -504,6 +504,7 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 	if serviceBindings, err = am.ReadServiceBindingsByApp(app.ID); err != nil {
 		return
 	}
+	oldStateBindingData := d.Get("service_binding").([]map[string]interface{})
 	var newStateServiceBindings []map[string]interface{}
 	for _, binding := range serviceBindings {
 		stateBindingData := make(map[string]interface{})
@@ -514,6 +515,12 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 			credentials[k] = fmt.Sprintf("%v", v)
 		}
 		stateBindingData["credentials"] = credentials
+		for _, oldBinding := range oldStateBindingData {
+			// cannot reliably read binding parameters, so we'll just pretend we know what they are
+			if oldBinding["service_instance"] == stateBindingData["service_instance"] {
+				stateBindingData["params"] = oldBinding["params"]
+			}
+		}
 		newStateServiceBindings = append(newStateServiceBindings, stateBindingData)
 	}
 	if err := d.Set("service_binding", newStateServiceBindings); err != nil {
@@ -689,6 +696,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 				newRouteConfig[r+"_mapping_id"] = mappingID
 			}
 		}
+		d.Set("route", [...]interface{}{newRouteConfig})
 		d.SetPartial("route")
 	}
 
@@ -937,14 +945,6 @@ func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (<-c
 	}
 
 	return pathChan, errChan
-}
-
-func downloadAppFromURL(d *schema.ResourceData) {
-
-}
-
-func downloadAppSourceBinary(d *schema.ResourceData) {
-
 }
 
 func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager) (routeID string, err error) {
