@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
 	"sync"
 	"time"
 
@@ -128,6 +129,10 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 
 	serviceInstance, err = sm.ReadServiceInstance(d.Id())
 	if err != nil {
+		if strings.Contains(err.Error(), "status code: 404") {
+			d.SetId("")
+			err = nil
+		}
 		return err
 	}
 
@@ -159,6 +164,13 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 	sm := session.ServiceManager()
 
 	session.Log.DebugMessage("begin resourceServiceInstanceUpdate")
+
+	// Enable partial state mode
+	// We need to explicitly set state updates ourselves or
+	// tell terraform when a state change is applied and thus okay to persist
+	// In particular this is necessary for params since we cannot query CF for
+	// the current value of this field
+	d.Partial(true)
 
 	var (
 		id, name string
@@ -198,6 +210,8 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 		return err
 	}
 
+	// We succeeded, disable partial mode
+	d.Partial(false)
 	return nil
 }
 
