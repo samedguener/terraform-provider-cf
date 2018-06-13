@@ -507,7 +507,7 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 	return err
 }
 
-func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
+func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	var disableBlueGreen bool
 	disableBlueGreen = false
@@ -529,33 +529,33 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		ID: d.Id(),
 	}
 
-	update := false
-	restage := false
-	restageUploadedApp := false
-
-	// Some attributes force app to stop (restart/restage)  e.g. "command"
-	// Some attributes just update the app without stopping it e.g. "disk_quota"
+	update := false // for changes where no restart is required
 	app.Name = *getChangedValueString("name", &update, d)
-	app.SpaceGUID = *getChangedValueString("space", &restage, d)
-	app.Ports = getChangedValueIntList("ports", &restage, d)
+	app.SpaceGUID = *getChangedValueString("space", &update, d)
 	app.Instances = getChangedValueInt("instances", &update, d)
-	app.Memory = getChangedValueInt("memory", &restage, d)
-	app.DiskQuota = getChangedValueInt("disk_quota", &update, d)
-	app.Command = getChangedValueString("command", &restage, d)
-	app.EnableSSH = getChangedValueBool("enable_ssh", &restage, d)
-	app.HealthCheckHTTPEndpoint = getChangedValueString("health_check_http_endpoint", &restage, d)
-	app.HealthCheckType = getChangedValueString("health_check_type", &restage, d)
+	app.EnableSSH = getChangedValueBool("enable_ssh", &update, d)
+	app.HealthCheckHTTPEndpoint = getChangedValueString("health_check_http_endpoint", &update, d)
+	app.HealthCheckType = getChangedValueString("health_check_type", &update, d)
 	app.HealthCheckTimeout = getChangedValueInt("health_check_timeout", &update, d)
 
+	restart := false // for changes where just a restart is required
+	app.Ports = getChangedValueIntList("ports", &restart, d)
+	app.Memory = getChangedValueInt("memory", &restart, d)
+	app.DiskQuota = getChangedValueInt("disk_quota", &restart, d)
+	app.Command = getChangedValueString("command", &restart, d)
+
+	restage := false // for changes where a full restage is required
 	app.Buildpack = getChangedValueString("buildpack", &restage, d)
 	app.Environment = getChangedValueMap("environment", &restage, d)
 
-	if d.HasChange("service_binding") || d.HasChange("stopped") || d.HasChange("route") || d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
-		restage = true
-	}
+	blueGreenNeeded := d.HasChange("service_binding") || d.HasChange("stopped") ||
+		d.HasChange("route") || d.HasChange("url") || d.HasChange("git") ||
+		d.HasChange("github_release") || d.HasChange("add_content")
 
 	// Update app if no restaging/restarts are necessary or bg is disabled
-	if (update || restage) && ((!disableBlueGreen && !restage) || disableBlueGreen) {
+	if (update || restart || restage) && (disableBlueGreen || !blueGreenNeeded) {
+		// push any updates to CF, we'll do any restage/restart later
+		var err error
 		if app, err = am.UpdateApp(app); err != nil {
 			return err
 		}
@@ -563,7 +563,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	}
 
 	// if app restages/restarts and bg is enabled, use bg for deployment, otherwise there will be downtime
-	if !disableBlueGreen && restage {
+	if !disableBlueGreen && blueGreenNeeded {
 		var numInstanceNewApp int
 		var numInstanceOriginApp int
 		var timeoutduration time.Duration
@@ -590,9 +590,10 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		originApp.Name = venerable(originAppName)
 
 		// Update origin app name
-		originApp, err = am.UpdateApp(originApp)
-		if err != nil {
+		if originAppRefeshed, err := am.UpdateApp(originApp); err != nil {
 			return err
+		} else {
+			originApp = originAppRefeshed
 		}
 		am.WaitForAppToStage(originApp, timeoutduration)
 		am.WaitForAppToStart(originApp, timeoutduration)
@@ -606,14 +607,14 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		// Create new App and start new app with one instance
 		tmpd = *d
 		tmpd.Set("instances", 1)
-		err = resourceAppCreate(&tmpd, meta)
-		if err != nil {
+
+		if err := resourceAppCreate(&tmpd, meta); err != nil {
 			return err
 		}
 
 		// Create new CCApp to update instance numbers only and to forbid restage/stops
 		newApp := cfapi.CCApp{}
-		newApp, err = am.FindApp(tmpd.Get("name").(string)) // Find app, due resourceAppCreate doesn't return the guid
+		newApp, _ = am.FindApp(tmpd.Get("name").(string)) // Find app, due resourceAppCreate doesn't return the guid
 		am.WaitForAppToStage(newApp, timeoutduration)
 		am.WaitForAppToStart(newApp, timeoutduration)
 		d.SetId(newApp.ID)
@@ -624,8 +625,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		if numInstanceNewApp == numInstanceOriginApp { // Instance numbers aren't changed
 
 			if numInstanceOriginApp == 1 && numInstanceNewApp == 1 { // Single Instance case
-				err = am.DeleteApp(originApp.ID, true)
-				if err != nil {
+				if err := am.DeleteApp(originApp.ID, true); err != nil {
 					return err
 				}
 			} else {
@@ -635,15 +635,13 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 					// Delete origin App
 					if numInstanceOriginApp == index {
-						err = am.DeleteApp(originApp.ID, true)
-						if err != nil {
+						if err := am.DeleteApp(originApp.ID, true); err != nil {
 							return err
 						}
 					} else {
 						// Scale origin app down
 						*originInstanceApp.Instances = numInstanceOriginApp - index
-						_, err = am.UpdateApp(originInstanceApp)
-						if err != nil {
+						if _, err := am.UpdateApp(originInstanceApp); err != nil {
 							return err
 						}
 						am.WaitForAppToStage(originInstanceApp, timeoutduration)
@@ -651,8 +649,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 					}
 					// Scale new app up
 					*newAppInstances.Instances = index
-					_, err = am.UpdateApp(newAppInstances)
-					if err != nil {
+					if _, err := am.UpdateApp(newAppInstances); err != nil {
 						return err
 					}
 					am.WaitForAppToStage(newAppInstances, timeoutduration)
@@ -666,15 +663,13 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 				// Delete origin App
 				if numInstanceOriginApp == index {
-					err = am.DeleteApp(originApp.ID, true)
-					if err != nil {
+					if err := am.DeleteApp(originApp.ID, true); err != nil {
 						return err
 					}
 				} else {
 					// Scale origin app down
 					*originInstanceApp.Instances = numInstanceOriginApp - index
-					_, err = am.UpdateApp(originInstanceApp)
-					if err != nil {
+					if _, err := am.UpdateApp(originInstanceApp); err != nil {
 						return err
 					}
 					am.WaitForAppToStage(originInstanceApp, timeoutduration)
@@ -683,8 +678,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 				if index <= numInstanceNewApp {
 					*newAppInstances.Instances = index
-					_, err = am.UpdateApp(newAppInstances)
-					if err != nil {
+					if _, err := am.UpdateApp(newAppInstances); err != nil {
 						return err
 					}
 					am.WaitForAppToStage(newAppInstances, timeoutduration)
@@ -699,15 +693,13 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 				// Delete origin App
 				if numInstanceOriginApp == index {
-					err = am.DeleteApp(originApp.ID, true)
-					if err != nil {
+					if err := am.DeleteApp(originApp.ID, true); err != nil {
 						return err
 					}
 				} else if index < numInstanceOriginApp {
 					// Scale origin app down
 					*originInstanceApp.Instances = numInstanceOriginApp - index
-					_, err = am.UpdateApp(originInstanceApp)
-					if err != nil {
+					if _, err := am.UpdateApp(originInstanceApp); err != nil {
 						return err
 					}
 					am.WaitForAppToStage(originInstanceApp, timeoutduration)
@@ -715,8 +707,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 				}
 
 				*newAppInstances.Instances = index
-				_, err = am.UpdateApp(newAppInstances)
-				if err != nil {
+				if _, err := am.UpdateApp(newAppInstances); err != nil {
 					return err
 				}
 				am.WaitForAppToStage(newAppInstances, timeoutduration)
@@ -726,9 +717,10 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		d.Set("instances", numInstanceNewApp)
 
-		return
+		return nil
 	}
 
+	// update the application's service bindings (the necessary restage is dealt with later)
 	if d.HasChange("service_binding") {
 
 		old, new := d.GetChange("service_binding")
@@ -739,15 +731,13 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		session.Log.DebugMessage("Service bindings to be deleted: %# v", bindingsToDelete)
 		session.Log.DebugMessage("Service bindings to be added: %# v", bindingsToAdd)
 
-		if err = removeServiceBindings(bindingsToDelete, am, session.Log); err != nil {
+		if err := removeServiceBindings(bindingsToDelete, am, session.Log); err != nil {
 			return err
 		}
 
-		var added []map[string]interface{}
-		if added, err = addServiceBindings(app.ID, bindingsToAdd, am, session.Log); err != nil {
+		if added, err := addServiceBindings(app.ID, bindingsToAdd, am, session.Log); err != nil {
 			return err
-		}
-		if len(added) > 0 {
+		} else if len(added) > 0 {
 			if new != nil {
 				for _, b := range new.([]interface{}) {
 					bb := b.(map[string]interface{})
@@ -771,7 +761,6 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		var (
 			oldRouteConfig, newRouteConfig map[string]interface{}
-			mappingID                      string
 		)
 
 		oldA := old.([]interface{})
@@ -792,18 +781,18 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 			"stage_route",
 			"live_route",
 		} {
-			if _, err = validateRoute(newRouteConfig, r, rm, false); err != nil {
-				return
+			if _, err := validateRoute(newRouteConfig, r, rm, false); err != nil {
+				return err
 			}
-			if mappingID, err = updateMapping(oldRouteConfig, newRouteConfig, r, app.ID, rm); err != nil {
-				return
-			}
-			if len(mappingID) > 0 {
+			if mappingID, err := updateMapping(oldRouteConfig, newRouteConfig, r, app.ID, rm); err != nil {
+				return err
+			} else if len(mappingID) > 0 {
 				newRouteConfig[r+"_mapping_id"] = mappingID
 			}
 		}
 	}
 
+	binaryUpdated := false // check if we need to update the application's binary
 	if d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
 
 		var (
@@ -815,53 +804,77 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 			addContent []map[string]interface{}
 		)
 
-		if appPath, err = prepareApp(app, d, session.Log); err != nil {
+		if appPathCalc, err := prepareApp(app, d, session.Log); err != nil {
 			return err
+		} else {
+			appPath = appPathCalc
 		}
+
 		if v, ok = d.GetOk("add_content"); ok {
 			addContent = getListOfStructs(v)
 		}
-		if err = am.UploadApp(app, appPath, addContent); err != nil {
+
+		if err := am.UploadApp(app, appPath, addContent); err != nil {
 			return err
 		}
-		restageUploadedApp = true
+		binaryUpdated = true
 	}
 
+	// now that all of the reconfiguration is done, we can deal doing a restage or restart, as required
 	timeout := time.Second * time.Duration(d.Get("timeout").(int))
 
-	// If new app was uploaded stop, start and restage, otherwise app won't start
-	if restageUploadedApp {
-		if err = am.StopApp(app.ID, timeout); err != nil {
-			return
+	// check the package state of the application after binary upload
+	var curApp cfapi.CCApp
+	var readErr error
+	if curApp, readErr = am.ReadApp(app.ID); readErr != nil {
+		return readErr
+	}
+	if binaryUpdated {
+		if *curApp.PackageState != "PENDING" {
+			// if it's not already pending, we need to restage
+			restage = true
+		} else {
+			// uploading the binary flagged the app for restaging,
+			// but we need to restart in order to force that to happen now
+			// (this is how the CF CLI does this)
+			restage = false
+			restart = true
 		}
-		if err = am.StartApp(app.ID, timeout); err != nil {
-			return
+	}
+
+	if restage {
+		if err := am.RestageApp(app.ID, timeout); err != nil {
+			return err
 		}
-		if err = am.RestageApp(app.ID, timeout); err != nil {
-			return
+		if *curApp.State == "STARTED" {
+			// if the app was running before the restage when wait for it to start again
+			if err := am.WaitForAppToStart(app, timeout); err != nil {
+				return err
+			}
 		}
-	} else if restage {
-		if err = am.RestageApp(app.ID, timeout); err != nil {
+	} else if restart && !d.Get("stopped").(bool) { // only run restart if the final state is running
+		if err := am.StopApp(app.ID, timeout); err != nil {
+			return err
+		}
+		if err := am.StartApp(app.ID, timeout); err != nil {
 			return err
 		}
 	}
 
+	// now set the final started/stopped state, whatever it is
 	if d.HasChange("stopped") {
-
 		if d.Get("stopped").(bool) {
-			if err = am.StopApp(app.ID, timeout); err != nil {
+			if err := am.StopApp(app.ID, timeout); err != nil {
 				return err
 			}
 		} else {
-			if err = am.StartApp(app.ID, timeout); err != nil {
+			if err := am.StartApp(app.ID, timeout); err != nil {
 				return err
 			}
 		}
-	} else if restage {
-		err = am.WaitForAppToStart(app, timeout)
 	}
 
-	return err
+	return nil
 }
 
 func resourceAppDelete(d *schema.ResourceData, meta interface{}) (err error) {
