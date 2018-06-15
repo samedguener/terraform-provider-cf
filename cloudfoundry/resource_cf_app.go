@@ -34,7 +34,7 @@ func resourceApp() *schema.Resource {
 			State: resourceAppImport,
 		},
 
-		SchemaVersion: 2,
+		SchemaVersion: 1,
 		Schema: map[string]*schema.Schema{
 
 			"name": &schema.Schema{
@@ -259,7 +259,7 @@ func resourceApp() *schema.Resource {
 						"validation_script": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
-							Removed:  "The 'route' block has been deprecated.",
+							Removed:  "Use blue_green.validation_script instead.",
 						},
 					},
 				},
@@ -315,7 +315,33 @@ func resourceApp() *schema.Resource {
 			},
 			"disable_blue_green_deployment": &schema.Schema{
 				Type:     schema.TypeBool,
-				Required: true,
+				Optional: true,
+				Removed:  "See new blue_green section instead to enable blue/green type updates.",
+			},
+			"blue_green": &schema.Schema{
+				Type:     schema.TypeList,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"enable": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  false,
+						},
+						"validation_script": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+					},
+				},
+			},
+			"deposed": {
+				// This is not flagged as computed so that Terraform will always flag deposed resources as a change and allow us to attempt to clean them up
+				Type:         schema.TypeMap,
+				Optional:     true,
+				Description:  "Do not use this, this field is meant for internal use only. (It is not flagged as Computed for technical reasons.)",
+				ValidateFunc: validateAppDeposedMapEmpty,
 			},
 		},
 
@@ -344,92 +370,77 @@ func validateAppHealthCheckType(v interface{}, k string) (ws []string, errs []er
 	return ws, errs
 }
 
-func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
+func validateAppDeposedMapEmpty(v interface{}, k string) (ws []string, errs []error) {
+	if len(v.(map[string]interface{})) != 0 {
+		errs = append(errs, fmt.Errorf("%q must not be set by the user", k))
+	}
+	return ws, errs
+}
+
+type cfAppConfig struct {
+	app             cfapi.CCApp
+	routeConfig     map[string]interface{}
+	serviceBindings []map[string]interface{}
+}
+
+func resourceAppCreate(d *schema.ResourceData, meta interface{}) error {
 
 	session := meta.(*cfapi.Session)
 	if session == nil {
 		return fmt.Errorf("client is nil")
 	}
 
-	am := session.AppManager()
-	rm := session.RouteManager()
-
-	var (
-		v  interface{}
-		ok bool
-
-		app cfapi.CCApp
-
-		appPath string
-
-		addContent []map[string]interface{}
-
-		defaultRoute, stageRoute, liveRoute string
-		disableBlueGreen                    bool
-
-		serviceBindings    []map[string]interface{}
-		hasServiceBindings bool
-
-		routeConfig map[string]interface{}
-	)
-
-	_ = stageRoute
-	_ = liveRoute
-
+	var app cfapi.CCApp
 	app.Name = d.Get("name").(string)
 	app.SpaceGUID = d.Get("space").(string)
-
-	if v, ok = d.GetOk("ports"); ok {
+	if v, ok := d.GetOk("ports"); ok {
 		p := []int{}
 		for _, vv := range v.(*schema.Set).List() {
 			p = append(p, vv.(int))
 		}
 		app.Ports = &p
 	}
-	if v, ok = d.GetOk("instances"); ok {
+	if v, ok := d.GetOk("instances"); ok {
 		vv := v.(int)
 		app.Instances = &vv
 	}
-	if v, ok = d.GetOk("memory"); ok {
+	if v, ok := d.GetOk("memory"); ok {
 		vv := v.(int)
 		app.Memory = &vv
 	}
-	if v, ok = d.GetOk("disk_quota"); ok {
+	if v, ok := d.GetOk("disk_quota"); ok {
 		vv := v.(int)
 		app.DiskQuota = &vv
 	}
-	if v, ok = d.GetOk("stack"); ok {
+	if v, ok := d.GetOk("stack"); ok {
 		vv := v.(string)
 		app.StackGUID = &vv
 	}
-	if v, ok = d.GetOk("buildpack"); ok {
+	if v, ok := d.GetOk("buildpack"); ok {
 		vv := v.(string)
 		app.Buildpack = &vv
 	}
-	if v, ok = d.GetOk("command"); ok {
+	if v, ok := d.GetOk("command"); ok {
 		vv := v.(string)
 		app.Command = &vv
 	}
-	if v, ok = d.GetOk("enable_ssh"); ok {
+	if v, ok := d.GetOk("enable_ssh"); ok {
 		vv := v.(bool)
 		app.EnableSSH = &vv
 	}
-	if v, ok = d.GetOk("add_content"); ok {
-		addContent = getListOfStructs(v)
-	}
-	if v, ok = d.GetOk("health_check_http_endpoint"); ok {
+	if v, ok := d.GetOk("health_check_http_endpoint"); ok {
 		vv := v.(string)
 		app.HealthCheckHTTPEndpoint = &vv
 	}
-	if v, ok = d.GetOk("health_check_type"); ok {
+	if v, ok := d.GetOk("health_check_type"); ok {
 		vv := v.(string)
 		app.HealthCheckType = &vv
 	}
-	if v, ok = d.GetOk("health_check_timeout"); ok {
+	if v, ok := d.GetOk("health_check_timeout"); ok {
 		vv := v.(int)
 		app.HealthCheckTimeout = &vv
 	}
-	if v, ok = d.GetOk("environment"); ok {
+	if v, ok := d.GetOk("environment"); ok {
 		vv := v.(map[string]interface{})
 		app.Environment = &vv
 	}
@@ -445,14 +456,49 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		app.DockerCredentials = &vv
 	}
 
-	if v, ok = d.GetOk("disable_blue_green_deployment"); ok {
-		vv := v.(bool)
-		disableBlueGreen = vv
+	appConfig := cfAppConfig{
+		app: app,
 	}
+
+	if err := resourceAppCreateCfApp(d, meta, &appConfig); err != nil {
+		return err
+	}
+
+	d.SetId(appConfig.app.ID)
+	setAppArguments(appConfig.app, d)
+	d.Set("service_binding", appConfig.serviceBindings)
+	d.Set("route", []map[string]interface{}{appConfig.routeConfig})
+
+	return nil
+}
+
+func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig *cfAppConfig) (err error) {
+
+	session := meta.(*cfapi.Session)
+	if session == nil {
+		return fmt.Errorf("client is nil")
+	}
+
+	am := session.AppManager()
+	rm := session.RouteManager()
+
+	app := appConfig.app
+	var (
+		v interface{}
+
+		appPath string
+
+		defaultRoute, stageRoute, liveRoute string
+
+		serviceBindings    []map[string]interface{}
+		hasServiceBindings bool
+
+		routeConfig    map[string]interface{}
+		hasRouteConfig bool
+	)
 
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
-
 		appPath, err = prepareApp(app, d, session.Log)
 		if err != nil {
 			return err
@@ -463,18 +509,20 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
 
-		if defaultRoute, err = validateRoute(routeConfig, "default_route", rm, disableBlueGreen); err != nil {
+		// ensure that if default route exists, that it is unbound or only bound to the existing application
+		if defaultRoute, err = validateRoute(routeConfig, "default_route", d.Id(), rm); err != nil {
 			return err
 		}
-		if stageRoute, err = validateRoute(routeConfig, "stage_route", rm, disableBlueGreen); err != nil {
+		// ensure that if stage route exists, that it is unbound
+		if stageRoute, err = validateRoute(routeConfig, "stage_route", "", rm); err != nil {
 			return err
 		}
-		if liveRoute, err = validateRoute(routeConfig, "live_route", rm, disableBlueGreen); err != nil {
+		// ensure that if live route exists, that it is unbound or only bound to the existing application
+		if liveRoute, err = validateRoute(routeConfig, "live_route", d.Id(), rm); err != nil {
 			return err
 		}
 
 		if len(stageRoute) > 0 && len(liveRoute) > 0 {
-
 		} else if len(stageRoute) > 0 || len(liveRoute) > 0 {
 			err = fmt.Errorf("both 'stage_route' and 'live_route' need to be provided to deploy the app using blue-green routing")
 			return err
@@ -499,6 +547,15 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	}()
 
+	var addContent []map[string]interface{}
+	if v, ok := d.GetOk("add_content"); ok {
+		addContent = getListOfStructs(v)
+	}
+	// Upload application binary / source
+	// asynchronously once download has completed
+	if err = <-prepare; err != nil {
+		return err
+	}
 	upload := make(chan error)
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
@@ -533,42 +590,33 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	}
 
-	if _, hasRouteConfig := d.GetOk("route"); hasRouteConfig {
-		// old style route block
+	if d.Id() != "" {
+		// we're doing a blue/green deployment, so we need to bind the stage_route
+		if len(stageRoute) > 0 {
+			if mappingID, err := rm.CreateRouteMapping(stageRoute, app.ID, nil); err != nil {
+				return err
+			} else {
+				routeConfig["stage_route_mapping_id"] = mappingID
+			}
+		} else {
+			return fmt.Errorf("stage_route is not defined, blue/green deployment failed")
+		}
+	} else {
+		// Bind default_route
 		if len(defaultRoute) > 0 {
-			// Bind default route
-			var mappingID string
-			if mappingID, err = rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
-				return err
-			}
-			routeConfig["default_route_mapping_id"] = mappingID
-			d.Set("route", []map[string]interface{}{routeConfig})
-			session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
-		}
-	} else if v, hasRouteConfig := d.GetOk("routes"); hasRouteConfig {
-		// new style routes block
-		var mappedRoutes []interface{}
-		for _, r := range v.(*schema.Set).List() {
-			data := r.(map[string]interface{})
-			routeID := data["route"].(string)
-			if err := validateRoute("", routeID, rm); err != nil {
-				return err
-			}
-			if mappingID, err := rm.CreateRouteMapping(routeID, app.ID, nil); err != nil {
+			if mappingID, err := rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
 				return err
 			} else {
-				data["mapping_id"] = mappingID
+				routeConfig["default_route_mapping_id"] = mappingID
 			}
-			// read mapping port
-			if mapping, err := rm.ReadRouteMapping(data["mapping_id"].(string)); err != nil {
+		}
+		// Bind live_route
+		if len(liveRoute) > 0 {
+			if mappingID, err := rm.CreateRouteMapping(liveRoute, app.ID, nil); err != nil {
 				return err
 			} else {
-				data["port"] = mapping.AppPort
+				routeConfig["live_route_mapping_id"] = mappingID
 			}
-			mappedRoutes = append(mappedRoutes, data)
-		}
-		if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, mappedRoutes)); err != nil {
-			return err
 		}
 	}
 
@@ -599,14 +647,16 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 	if app, err = am.ReadApp(app.ID); err != nil {
 		return err
 	}
-	d.SetId(app.ID)
-
+	appConfig.app = app
 	session.Log.DebugMessage("Created app state: %# v", app)
-	setAppArguments(app, d)
 
 	if hasServiceBindings {
-		d.Set("service_binding", serviceBindings)
+		appConfig.serviceBindings = serviceBindings
 		session.Log.DebugMessage("Created service bindings: %# v", d.Get("service_binding"))
+	}
+	if hasRouteConfig {
+		appConfig.routeConfig = routeConfig
+		session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
 	}
 
 	return err
@@ -690,35 +740,40 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	}
 
+	// check if any old deposed resources still exist
+	if v, ok := d.GetOk("deposed"); ok {
+		deposedResources := v.(map[string]interface{})
+		for r, _ := range deposedResources {
+			if _, err := am.ReadApp(r); err != nil {
+				if strings.Contains(err.Error(), "status code: 404") {
+					delete(deposedResources, r)
+				}
+			} else {
+				delete(deposedResources, r)
+			}
+		}
+		if err := d.Set("deposed", deposedResources); err != nil {
+			return err
+		}
+	}
+
 	return err
 }
 
-func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
-
-	// Enable partial state mode
-	// We need to explicitly set state updates ourselves or
-	// tell terraform when a state change is applied and thus okay to persist
-	d.Partial(true)
-
-	var disableBlueGreen bool
-	disableBlueGreen = false
+func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
+	// preseve deposed resources until we clean them up
+	existingDeposed, _ := d.GetChange("deposed")
+	d.Set("deposed", existingDeposed)
 
 	session := meta.(*cfapi.Session)
 	if session == nil {
 		return fmt.Errorf("client is nil")
 	}
 
-	am := session.AppManager()
-	rm := session.RouteManager()
+	// TODO: clean-up old deposed resources
 
-	if v, ok := d.GetOk("disable_blue_green_deployment"); ok {
-		vv := v.(bool)
-		disableBlueGreen = vv
-	}
-
-	app := cfapi.CCApp{
-		ID: d.Id(),
-	}
+	app := cfapi.CCApp{}
+	d.Partial(true)
 
 	update := false // for changes where no restart is required
 	app.Name = *getChangedValueString("name", &update, d)
@@ -737,6 +792,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
 
 	restage := false // for changes where a full restage is required
 	app.Buildpack = getChangedValueString("buildpack", &restage, d)
+	app.StackGUID = getChangedValueString("stack", &restage, d)
 	app.Environment = getChangedValueMap("environment", &restage, d)
 
 	// Notes about docker images
@@ -771,171 +827,165 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) error {
 		d.SetPartial("environment")
 	}
 
-	// if app restages/restarts and bg is enabled, use bg for deployment, otherwise there will be downtime
-	if !disableBlueGreen && restage {
-		var numInstanceNewApp int
-		var numInstanceOriginApp int
-		var timeoutduration time.Duration
-		var tmpd schema.ResourceData
-		var originAppName string
+	if v, ok := d.GetOk("blue_green"); ok {
+		blueGreenConfig := v.(map[string]interface{})
+		if blueGreenEnabled, ok := blueGreenConfig["enable"]; ok && blueGreenEnabled.(bool) {
+			if restart || restage || d.HasChange("service_binding") ||
+				d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
+				// we need to do a blue/green deployment
+				err = resourceAppBlueGreenUpdate(d, meta, app)
+			}
+		}
+	}
+	// fall back to a standard update to the existing app
+	err = resourceAppStandardUpdate(d, meta, app, update, restart, restage)
+	if err == nil {
+		d.Partial(false)
+	}
 
-		if v, ok := d.GetOk("instances"); ok {
-			vv := v.(int)
-			numInstanceNewApp = vv
+	return err
+}
+
+func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp cfapi.CCApp) error {
+
+	session := meta.(*cfapi.Session)
+	if session == nil {
+		return fmt.Errorf("client is nil")
+	}
+
+	am := session.AppManager()
+	rm := session.RouteManager()
+
+	var venerableApp cfapi.CCApp
+	if v, err := am.ReadApp(d.Id()); err != nil {
+		return err
+	} else {
+		venerableApp = v
+	}
+
+	// Update origin app name
+	if venerableAppRefeshed, err := am.UpdateApp(cfapi.CCApp{ID: d.Id(), Name: venerableApp.Name + "-venerable"}); err != nil {
+		return err
+	} else {
+		venerableApp = venerableAppRefeshed
+	}
+
+	appConfig := cfAppConfig{
+		app: newApp,
+	}
+	*appConfig.app.Instances = 1 // start the staged app with only one instance (we'll scale it up later)
+	if err := resourceAppCreateCfApp(d, meta, &appConfig); err != nil {
+		return err
+	}
+
+	// TODO: Execute blue-green validation
+
+	// now that we've passed validation, we've passed the point of no return
+	d.SetId(appConfig.app.ID)
+	d.SetPartial("url")
+	d.SetPartial("git")
+	d.SetPartial("github_release")
+	d.SetPartial("add_content")
+	d.SetPartial("service_binding")
+	setAppArguments(appConfig.app, d)
+
+	// ensure we keep track of the old application to clean it up later if we fail
+	deposedResources := d.Get("deposed").(map[string]interface{})
+	deposedResources[venerableApp.ID] = "application"
+	d.Set("deposed", deposedResources)
+
+	// Now bind the other routes to the new application instance and scale it up
+	// Bind default_route
+	if defaultRoute, err := validateRoute(appConfig.routeConfig, "default_route", d.Id(), rm); err != nil {
+		return err
+	} else if len(defaultRoute) > 0 {
+		if mappingID, err := rm.CreateRouteMapping(defaultRoute, appConfig.app.ID, nil); err != nil {
+			return err
+		} else {
+			appConfig.routeConfig["default_route_mapping_id"] = mappingID
+		}
+	}
+	// Bind live_route
+	if liveRoute, err := validateRoute(appConfig.routeConfig, "live_route", d.Id(), rm); err != nil {
+		return err
+	} else if len(liveRoute) > 0 {
+		if mappingID, err := rm.CreateRouteMapping(liveRoute, appConfig.app.ID, nil); err != nil {
+			return err
+		} else {
+			appConfig.routeConfig["live_route_mapping_id"] = mappingID
+		}
+	}
+	d.SetPartial("route")
+
+	var timeoutDuration time.Duration
+	if v, ok := d.GetOk("timeout"); ok {
+		vv := v.(int)
+		timeoutDuration = time.Second * time.Duration(vv)
+	}
+
+	// now scale up the new app and scale down the old app
+	venerableAppScale := cfapi.CCApp{
+		ID:        appConfig.app.ID,
+		Instances: venerableApp.Instances,
+	}
+	newAppScale := cfapi.CCApp{
+		ID:        appConfig.app.ID,
+		Instances: func(i int) *int { return &i }(1),
+	}
+	for *newAppScale.Instances < *newApp.Instances || *venerableAppScale.Instances > 1 {
+		if *newAppScale.Instances < *newApp.Instances {
+			// scale up new
+			*newAppScale.Instances++
+			if _, err := am.UpdateApp(newAppScale); err != nil {
+				return err
+			}
+			if *(appConfig.app.State) != "STOPPED" {
+				am.WaitForAppToStart(newAppScale, timeoutDuration)
+			}
 		}
 
-		if v, ok := d.GetOk("timeout"); ok {
-			vv := v.(int)
-			timeoutduration = time.Second * time.Duration(vv)
+		if *venerableAppScale.Instances > 1 {
+			// scale down old
+			*venerableAppScale.Instances--
+			if _, err := am.UpdateApp(venerableAppScale); err != nil {
+				return err
+			}
+			if *venerableApp.State != "STOPPED" {
+				// TODO: wait for instance to stop
+			}
 		}
+	}
 
-		if v, ok := d.GetOk("name"); ok {
-			vv := v.(string)
-			originAppName = vv
-		}
+	// now delete the old application
+	if err := am.DeleteApp(venerableAppScale.ID, true); err != nil {
+		return err
+	} else {
+		deposedResources := d.Get("deposed").(map[string]interface{})
+		delete(deposedResources, venerableApp.ID)
+		d.Set("deposed", deposedResources)
+	}
 
-		// Rename origin app
-		originApp := cfapi.CCApp{ID: d.Id()}
-		originApp.Name = venerable(originAppName)
+	return nil
+}
 
-		// Update origin app name
-		originApp, err = am.UpdateApp(originApp)
-		if err != nil {
+func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfapi.CCApp, update bool, restart bool, restage bool) error {
+	session := meta.(*cfapi.Session)
+	if session == nil {
+		return fmt.Errorf("client is nil")
+	}
+
+	am := session.AppManager()
+	rm := session.RouteManager()
+
+	app.ID = d.Id()
+
+	if update || restart || restage {
+		// push any updates to CF, we'll do any restage/restart later
+		var err error
+		if app, err = am.UpdateApp(app); err != nil {
 			return err
 		}
-		am.WaitForAppToStage(originApp, timeoutduration)
-		am.WaitForAppToStart(originApp, timeoutduration)
-
-		numInstanceOriginApp = *originApp.Instances
-
-		// Create new CCApp to update instance numbers only and to forbid restage/stops
-		originInstanceApp := cfapi.CCApp{ID: originApp.ID}
-		originInstanceApp.Instances = new(int)
-
-		// Create new App and start new app with one instance
-		tmpd = *d
-		tmpd.Set("instances", 1)
-		err = resourceAppCreate(&tmpd, meta)
-		if err != nil {
-			return err
-		}
-
-		// Create new CCApp to update instance numbers only and to forbid restage/stops
-		newApp := cfapi.CCApp{}
-		newApp, err = am.FindApp(tmpd.Get("name").(string)) // Find app, due resourceAppCreate doesn't return the guid
-		am.WaitForAppToStage(newApp, timeoutduration)
-		am.WaitForAppToStart(newApp, timeoutduration)
-		d.SetId(newApp.ID)
-
-		newAppInstances := cfapi.CCApp{ID: newApp.ID}
-		newAppInstances.Instances = new(int)
-
-		if numInstanceNewApp == numInstanceOriginApp { // Instance numbers aren't changed
-
-			if numInstanceOriginApp == 1 && numInstanceNewApp == 1 { // Single Instance case
-				err = am.DeleteApp(originApp.ID, true)
-				if err != nil {
-					return err
-				}
-			} else {
-				k := numInstanceOriginApp + 1
-
-				for index := 1; index < k; index++ {
-
-					// Delete origin App
-					if numInstanceOriginApp == index {
-						err = am.DeleteApp(originApp.ID, true)
-						if err != nil {
-							return err
-						}
-					} else {
-						// Scale origin app down
-						*originInstanceApp.Instances = numInstanceOriginApp - index
-						_, err = am.UpdateApp(originInstanceApp)
-						if err != nil {
-							return err
-						}
-						am.WaitForAppToStage(originInstanceApp, timeoutduration)
-						am.WaitForAppToStart(originInstanceApp, timeoutduration)
-					}
-					// Scale new app up
-					*newAppInstances.Instances = index
-					_, err = am.UpdateApp(newAppInstances)
-					if err != nil {
-						return err
-					}
-					am.WaitForAppToStage(newAppInstances, timeoutduration)
-					am.WaitForAppToStart(newAppInstances, timeoutduration)
-				}
-			}
-		} else if numInstanceOriginApp > numInstanceNewApp {
-			k := numInstanceOriginApp + 1
-
-			for index := 1; index < k; index++ {
-
-				// Delete origin App
-				if numInstanceOriginApp == index {
-					err = am.DeleteApp(originApp.ID, true)
-					if err != nil {
-						return err
-					}
-				} else {
-					// Scale origin app down
-					*originInstanceApp.Instances = numInstanceOriginApp - index
-					_, err = am.UpdateApp(originInstanceApp)
-					if err != nil {
-						return err
-					}
-					am.WaitForAppToStage(originInstanceApp, timeoutduration)
-					am.WaitForAppToStart(originInstanceApp, timeoutduration)
-				}
-
-				if index <= numInstanceNewApp {
-					*newAppInstances.Instances = index
-					_, err = am.UpdateApp(newAppInstances)
-					if err != nil {
-						return err
-					}
-					am.WaitForAppToStage(newAppInstances, timeoutduration)
-					am.WaitForAppToStart(newAppInstances, timeoutduration)
-				}
-			}
-
-		} else if numInstanceOriginApp < numInstanceNewApp {
-			k := numInstanceNewApp + 1
-
-			for index := 1; index < k; index++ {
-
-				// Delete origin App
-				if numInstanceOriginApp == index {
-					err = am.DeleteApp(originApp.ID, true)
-					if err != nil {
-						return err
-					}
-				} else if index < numInstanceOriginApp {
-					// Scale origin app down
-					*originInstanceApp.Instances = numInstanceOriginApp - index
-					_, err = am.UpdateApp(originInstanceApp)
-					if err != nil {
-						return err
-					}
-					am.WaitForAppToStage(originInstanceApp, timeoutduration)
-					am.WaitForAppToStart(originInstanceApp, timeoutduration)
-				}
-
-				*newAppInstances.Instances = index
-				_, err = am.UpdateApp(newAppInstances)
-				if err != nil {
-					return err
-				}
-				am.WaitForAppToStage(newAppInstances, timeoutduration)
-				am.WaitForAppToStart(newAppInstances, timeoutduration)
-			}
-		}
-
-		d.Set("instances", numInstanceNewApp)
-
-		return
+		setAppArguments(app, d)
 	}
 
 	if d.HasChange("service_binding") {
@@ -1345,8 +1395,8 @@ func setAppArguments(app cfapi.CCApp, d *schema.ResourceData) {
 		d.Set("environment", app.Environment)
 	}
 
-	d.Set("timeout", d.Get("timeout"))
-	d.Set("stopped", d.Get("stopped"))
+	d.SetPartial("timeout")
+	d.Set("stopped", *app.State != "STARTED")
 
 	ports := []interface{}{}
 	for _, p := range *app.Ports {
@@ -1413,19 +1463,19 @@ func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (pat
 	return path, nil
 }
 
-func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager, disableBlueGreen bool) (routeID string, err error) {
+func validateRoute(routeConfig map[string]interface{}, route string, appID string, rm *cfapi.RouteManager) (routeID string, err error) {
 
 	if v, ok := routeConfig[route]; ok {
 
 		routeID = v.(string)
 
-		// Routes must bind to multiple apps in blue green deployment
-		if !disableBlueGreen {
-			return
-		}
-
 		var mappings []map[string]interface{}
 		if mappings, err = rm.ReadRouteMappingsByRoute(routeID); err == nil && len(mappings) > 0 {
+			if len(mappings) == 1 {
+				if app, ok := mappings[0]["app"]; ok && app == appID {
+					return routeID, err
+				}
+			}
 			err = fmt.Errorf(
 				"route with id %s is already mapped. routes specificed in the 'route' argument can only be mapped to one 'cloudfoundry_app' resource",
 				routeID)
@@ -1522,7 +1572,4 @@ func removeServiceBindings(delete []map[string]interface{},
 		}
 	}
 	return nil
-}
-func venerable(name string) string {
-	return name + "-venerable"
 }
