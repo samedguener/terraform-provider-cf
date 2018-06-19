@@ -7,11 +7,14 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"code.cloudfoundry.org/cli/cf/terminal"
 
+	// "github.com/hashicorp/terraform/helper/hashcode"
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/validation"
 	"github.com/terraform-providers/terraform-provider-cloudfoundry/cloudfoundry/cfapi"
@@ -952,9 +955,20 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 				return err
 			}
 			if *(appConfig.app.State) != "STOPPED" {
-				time.Sleep(time.Second * time.Duration(15))
-				// TODO: fix this wait
-				am.WaitForAppToStart(newAppScale, timeoutDuration)
+				// wait for the new instance to start
+				stateConf := &resource.StateChangeConf{
+					Pending: []string{"false"},
+					Target:  []string{"true"},
+					Refresh: func() (interface{}, string, error) {
+						c, err := am.CountRunningAppInstances(newAppScale)
+						return new(interface{}), strconv.FormatBool(c >= *newAppScale.Instances), err
+					},
+					Timeout:      timeoutDuration,
+					PollInterval: 5 * time.Second,
+				}
+				if _, err := stateConf.WaitForState(); err != nil {
+					return err
+				}
 			}
 		}
 
@@ -966,8 +980,20 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 				return err
 			}
 			if *venerableApp.State != "STOPPED" {
-				time.Sleep(time.Second * time.Duration(5))
-				// TODO: wait for instance to stop
+				// wait for the instance to stop
+				stateConf := &resource.StateChangeConf{
+					Pending: []string{"false"},
+					Target:  []string{"true"},
+					Refresh: func() (interface{}, string, error) {
+						c, err := am.CountRunningAppInstances(venerableApp)
+						return new(interface{}), strconv.FormatBool(c <= *venerableApp.Instances), err
+					},
+					Timeout:      timeoutDuration,
+					PollInterval: 5 * time.Second,
+				}
+				if _, err := stateConf.WaitForState(); err != nil {
+					return err
+				}
 			}
 		}
 	}

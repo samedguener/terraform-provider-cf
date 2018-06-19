@@ -50,6 +50,7 @@ resource "cloudfoundry_service_instance" "fs1" {
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring"
 	space = "${data.cloudfoundry_space.space.id}"
+	instances = "2"
 	memory = "768"
 	disk_quota = "512"
 	timeout = 1800
@@ -163,7 +164,7 @@ resource "cloudfoundry_service_instance" "fs2" {
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring-updated"
 	space = "${data.cloudfoundry_space.space.id}"
-	instances ="2"
+	instances ="1"
 	memory = "1024"
 	disk_quota = "1024"
 	timeout = 1800
@@ -238,7 +239,7 @@ resource "cf_service_instance" "fs2" {
 resource "cf_app" "spring-music" {
 	name = "spring-music-updated"
 	space = "${data.cf_space.space.id}"
-	instances ="2"
+	instances ="3"
 	memory = "1024"
 	disk_quota = "1024"
 	timeout = 1800
@@ -749,7 +750,7 @@ func TestAccApp_app1_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(
 							refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(
-							refApp, "instances", "1"),
+							refApp, "instances", "2"),
 						resource.TestCheckResourceAttr(
 							refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(
@@ -790,7 +791,7 @@ func TestAccApp_app1_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(
 							refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(
-							refApp, "instances", "2"),
+							refApp, "instances", "3"),
 						resource.TestCheckResourceAttr(
 							refApp, "memory", "1024"),
 						resource.TestCheckResourceAttr(
