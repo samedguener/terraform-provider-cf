@@ -827,18 +827,24 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		d.SetPartial("environment")
 	}
 
+	blueGreen := false
 	if v, ok := d.GetOk("blue_green"); ok {
-		blueGreenConfig := v.(map[string]interface{})
+		blueGreenConfig := v.([]interface{})[0].(map[string]interface{})
 		if blueGreenEnabled, ok := blueGreenConfig["enable"]; ok && blueGreenEnabled.(bool) {
 			if restart || restage || d.HasChange("service_binding") ||
 				d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
-				// we need to do a blue/green deployment
-				err = resourceAppBlueGreenUpdate(d, meta, app)
+				blueGreen = true
 			}
 		}
 	}
-	// fall back to a standard update to the existing app
-	err = resourceAppStandardUpdate(d, meta, app, update, restart, restage)
+
+	if blueGreen {
+		err = resourceAppBlueGreenUpdate(d, meta, app)
+	} else {
+		// fall back to a standard update to the existing app
+		err = resourceAppStandardUpdate(d, meta, app, update, restart, restage)
+	}
+
 	if err == nil {
 		d.Partial(false)
 	}
@@ -873,10 +879,11 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 	appConfig := cfAppConfig{
 		app: newApp,
 	}
-	*appConfig.app.Instances = 1 // start the staged app with only one instance (we'll scale it up later)
+	appConfig.app.Instances = func(i int) *int { return &i }(1) // start the staged app with only one instance (we'll scale it up later)
 	if err := resourceAppCreateCfApp(d, meta, &appConfig); err != nil {
 		return err
 	}
+	appConfig.app.Instances = newApp.Instances // restore final expected instances count
 
 	// TODO: Execute blue-green validation
 
@@ -896,7 +903,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 
 	// Now bind the other routes to the new application instance and scale it up
 	// Bind default_route
-	if defaultRoute, err := validateRoute(appConfig.routeConfig, "default_route", d.Id(), rm); err != nil {
+	if defaultRoute, err := validateRoute(appConfig.routeConfig, "default_route", venerableApp.ID, rm); err != nil {
 		return err
 	} else if len(defaultRoute) > 0 {
 		if mappingID, err := rm.CreateRouteMapping(defaultRoute, appConfig.app.ID, nil); err != nil {
@@ -906,7 +913,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		}
 	}
 	// Bind live_route
-	if liveRoute, err := validateRoute(appConfig.routeConfig, "live_route", d.Id(), rm); err != nil {
+	if liveRoute, err := validateRoute(appConfig.routeConfig, "live_route", venerableApp.ID, rm); err != nil {
 		return err
 	} else if len(liveRoute) > 0 {
 		if mappingID, err := rm.CreateRouteMapping(liveRoute, appConfig.app.ID, nil); err != nil {
@@ -925,21 +932,28 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 
 	// now scale up the new app and scale down the old app
 	venerableAppScale := cfapi.CCApp{
-		ID:        appConfig.app.ID,
+		ID:        venerableApp.ID,
+		Name:      venerableApp.Name,
 		Instances: venerableApp.Instances,
 	}
 	newAppScale := cfapi.CCApp{
 		ID:        appConfig.app.ID,
+		Name:      appConfig.app.Name,
 		Instances: func(i int) *int { return &i }(1),
 	}
+	session.Log.DebugMessage("newApp.Instances: %d", *newApp.Instances)
+	session.Log.DebugMessage("venerableApp.Instances: %d", *venerableAppScale.Instances)
 	for *newAppScale.Instances < *newApp.Instances || *venerableAppScale.Instances > 1 {
 		if *newAppScale.Instances < *newApp.Instances {
 			// scale up new
 			*newAppScale.Instances++
+			session.Log.DebugMessage("Scaling up new app %s to instance count %d", newAppScale.ID, *newAppScale.Instances)
 			if _, err := am.UpdateApp(newAppScale); err != nil {
 				return err
 			}
 			if *(appConfig.app.State) != "STOPPED" {
+				time.Sleep(time.Second * time.Duration(15))
+				// TODO: fix this wait
 				am.WaitForAppToStart(newAppScale, timeoutDuration)
 			}
 		}
@@ -947,10 +961,12 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		if *venerableAppScale.Instances > 1 {
 			// scale down old
 			*venerableAppScale.Instances--
+			session.Log.DebugMessage("Scaling down venerable app %s to instance count %d", venerableAppScale.ID, *venerableAppScale.Instances)
 			if _, err := am.UpdateApp(venerableAppScale); err != nil {
 				return err
 			}
 			if *venerableApp.State != "STOPPED" {
+				time.Sleep(time.Second * time.Duration(5))
 				// TODO: wait for instance to stop
 			}
 		}
@@ -964,6 +980,8 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		delete(deposedResources, venerableApp.ID)
 		d.Set("deposed", deposedResources)
 	}
+
+	// TODO: unmap stage route?
 
 	return nil
 }

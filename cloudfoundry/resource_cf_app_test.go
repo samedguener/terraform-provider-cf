@@ -191,6 +191,86 @@ resource "cloudfoundry_app" "java-spring" {
 }
 `
 
+const appResourceSpringMusicBlueGreenUpdate = `
+
+data "cf_domain" "local" {
+    name = "%s"
+}
+data "cf_org" "org" {
+    name = "pcfdev-org"
+}
+data "cf_space" "space" {
+    name = "pcfdev-space"
+	org = "${data.cf_org.org.id}"
+}
+data "cf_service" "mysql" {
+    name = "p-mysql"
+}
+data "cf_service" "rmq" {
+    name = "p-rabbitmq"
+}
+
+resource "cf_route" "spring-music" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "spring-music"
+}
+resource "cf_route" "spring-music-stage" {
+	domain = "${data.cf_domain.local.id}"
+	space = "${data.cf_space.space.id}"
+	hostname = "spring-music-stage"
+}
+resource "cf_service_instance" "db" {
+	name = "db"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.mysql.service_plans.512mb}"
+}
+resource "cf_service_instance" "fs1" {
+	name = "fs1"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.rmq.service_plans.standard}"
+}
+resource "cf_service_instance" "fs2" {
+	name = "fs2"
+    space = "${data.cf_space.space.id}"
+    service_plan = "${data.cf_service.rmq.service_plans.standard}"
+}
+resource "cf_app" "spring-music" {
+	name = "spring-music-updated"
+	space = "${data.cf_space.space.id}"
+	instances ="2"
+	memory = "1024"
+	disk_quota = "1024"
+	timeout = 1800
+
+	url = "https://github.com/mevansam/spring-music/releases/download/v1.0/spring-music.war"
+
+	service_binding {
+		service_instance = "${cf_service_instance.db.id}"
+	}
+	service_binding {
+		service_instance = "${cf_service_instance.fs2.id}"
+	}
+	service_binding {
+		service_instance = "${cf_service_instance.fs1.id}"
+	}
+
+	route {
+		live_route = "${cf_route.spring-music.id}"
+		stage_route = "${cf_route.spring-music-stage.id}"
+	}
+
+	environment {
+		TEST_VAR_1 = "testval1"
+		TEST_VAR_2 = "testval2"
+	}
+
+	blue_green = {
+		enable = true
+	}
+}
+`
+
 const appResourceWithMultiplePorts = `
 
 data "cloudfoundry_domain" "local" {
@@ -634,6 +714,101 @@ func TestAccApp_app1(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
+					),
+				},
+			},
+		})
+}
+func TestAccApp_app1_bluegreen(t *testing.T) {
+
+	refApp := "cf_app.spring-music"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					Config: fmt.Sprintf(appResourceSpringMusic, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(
+							refApp, "name", "spring-music"),
+						resource.TestCheckResourceAttr(
+							refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(
+							refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(
+							refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(
+							refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(
+							refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(
+							refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(
+							refApp, "stack"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.%", "2"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.TEST_VAR_1", "testval1"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(
+							refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(
+							refApp, "health_check_type", "port"),
+						resource.TestCheckResourceAttr(
+							refApp, "service_binding.#", "2"),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(appResourceSpringMusicBlueGreenUpdate, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(
+							refApp, "name", "spring-music-updated"),
+						resource.TestCheckResourceAttr(
+							refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(
+							refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(
+							refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(
+							refApp, "instances", "2"),
+						resource.TestCheckResourceAttr(
+							refApp, "memory", "1024"),
+						resource.TestCheckResourceAttr(
+							refApp, "disk_quota", "1024"),
+						resource.TestCheckResourceAttrSet(
+							refApp, "stack"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.%", "2"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.TEST_VAR_1", "testval1"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(
+							refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(
+							refApp, "health_check_type", "port"),
+						resource.TestCheckResourceAttr(
+							refApp, "service_binding.#", "3"),
 					),
 				},
 			},
