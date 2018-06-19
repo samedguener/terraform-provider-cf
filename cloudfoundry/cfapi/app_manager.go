@@ -359,6 +359,32 @@ func (am *AppManager) WaitForAppToStart(app CCApp, timeout time.Duration) (err e
 	return nil
 }
 
+// ReadAppInstanceState -
+func (am *AppManager) ReadAppInstanceState(app CCApp) (map[string]interface{}, error) {
+	response := make(map[string]interface{})
+	if err := am.ccGateway.GetResource(fmt.Sprintf("%s/v2/apps/%s/instances", am.apiEndpoint, app.ID), &response); err != nil {
+		return response, err
+	}
+	return response, nil
+}
+
+// CountRunningAppInstances -
+func (am *AppManager) CountRunningAppInstances(app CCApp) (int, error) {
+	response, err := am.ReadAppInstanceState(app)
+	if err != nil {
+		return -1, err
+	}
+
+	runningCount := 0
+	for _, v := range response {
+		stateData := v.(map[string]interface{})
+		if stateData["state"].(string) == "RUNNING" {
+			runningCount++
+		}
+	}
+	return runningCount, nil
+}
+
 // RestageApp -
 func (am *AppManager) RestageApp(appID string, timeout time.Duration) (err error) {
 
