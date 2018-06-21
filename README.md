@@ -9,6 +9,7 @@ The [upstream repository](https://github.com/mevansam/terraform-provider-cf) was
 Following Features/Issues have been implmented/fixed:
 
 - [Asynchronous provisioning/deprovisioning and update of cf_service_instance](https://github.com/mevansam/terraform-provider-cf/issues/51)
+- [Docker support](https://github.com/mevansam/terraform-provider-cf/pull/84) Merged to upsteam.
 - [Application Binding to Service Instances fail](https://github.com/mevansam/terraform-provider-cf/issues/40)
 - [Deletion of Service Instances](https://github.com/mevansam/terraform-provider-cf/issues/36)
 - [Application Update fails](https://github.com/mevansam/terraform-provider-cf/issues/32)
