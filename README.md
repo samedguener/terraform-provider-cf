@@ -17,6 +17,7 @@ Following Features/Issues have been implmented/fixed:
 - [Fix unexpected EOF errors on cf_app deployment](https://github.com/chrismathias/terraform-provider-cf/pull/12)
 - [Fix error of import apps with credentials in list](https://github.com/chrismathias/terraform-provider-cf/pull/14)
 - [Fix route mapping bug with multiple routes on application updates](https://github.com/chrismathias/terraform-provider-cf/pull/13)
+- [Better import support](https://github.com/chrismathias/terraform-provider-cf/commits/several-imports)
 
 If merged is mentioned next to the implemented feature, then it is also incorporated to the upstream version.
 
