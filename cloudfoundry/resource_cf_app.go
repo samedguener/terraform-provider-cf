@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -17,7 +18,6 @@ import (
 	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
-	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/repo"
 )
 
 // DefaultAppTimeout - Timeout (in seconds) when pushing apps to CF
@@ -423,8 +423,6 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 	var (
 		v interface{}
 
-		appPath string
-
 		defaultRoute, stageRoute, liveRoute string
 
 		serviceBindings    []map[string]interface{}
@@ -435,11 +433,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 	)
 
 	// Download application binary / source asynchronously
-	prepare := make(chan error)
-	go func() {
-		appPath, err = prepareApp(app, d, session.Log)
-		prepare <- err
-	}()
+	appPathChan, errChan := prepareApp(app, d, session.Log)
 
 	if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
 
@@ -482,13 +476,15 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 	if v, ok := d.GetOk("add_content"); ok {
 		addContent = getListOfStructs(v)
 	}
-	// Upload application binary / source
-	// asynchronously once download has completed
-	if err = <-prepare; err != nil {
-		return err
-	}
+	// Upload application binary / source asynchronously once download has completed
 	upload := make(chan error)
 	go func() {
+		appPath := <-appPathChan
+		err := <-errChan
+		if err != nil {
+			upload <- err
+			return
+		}
 		err = am.UploadApp(app, appPath, addContent)
 		upload <- err
 	}()
@@ -571,16 +567,67 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 
 	id := d.Id()
 	am := session.AppManager()
+	rm := session.RouteManager()
 
 	var app cfapi.CCApp
 	if app, err = am.ReadApp(id); err != nil {
 		if strings.Contains(err.Error(), "status code: 404") {
-			d.MarkNewResource()
+			d.SetId("")
 			err = nil
 		}
 	} else {
 		setAppArguments(app, d)
 	}
+
+	var serviceBindings []map[string]interface{}
+	if serviceBindings, err = am.ReadServiceBindingsByApp(app.ID); err != nil {
+		return
+	}
+	var newStateServiceBindings []map[string]interface{}
+	for _, binding := range serviceBindings {
+		stateBindingData := make(map[string]interface{})
+		stateBindingData["service_instance"] = binding["service_instance"].(string)
+		stateBindingData["binding_id"] = binding["binding_id"].(string)
+		credentials := binding["credentials"].(map[string]interface{})
+		for k, v := range credentials {
+			credentials[k] = fmt.Sprintf("%v", v)
+		}
+		stateBindingData["credentials"] = credentials
+		newStateServiceBindings = append(newStateServiceBindings, stateBindingData)
+	}
+	if err := d.Set("service_binding", newStateServiceBindings); err != nil {
+		log.Printf("[WARN] Error setting service_binding to cf_app (%s): %s", d.Id(), err)
+	}
+
+	var routeMappings []map[string]interface{}
+	if routeMappings, err = rm.ReadRouteMappingsByApp(app.ID); err != nil {
+		return
+	}
+	var stateRouteList = d.Get("route").([]interface{})
+	var stateRouteMappings map[string]interface{}
+	if len(stateRouteList) == 1 {
+		stateRouteMappings = stateRouteList[0].(map[string]interface{})
+	} else {
+		stateRouteMappings = make(map[string]interface{})
+	}
+	currentRouteMappings := make(map[string]interface{})
+	for _, r := range []string{
+		"default_route",
+		"stage_route",
+		"live_route",
+	} {
+		currentRouteMappings[r] = ""
+		currentRouteMappings[r+"_mapping_id"] = ""
+		for _, mapping := range routeMappings {
+			var mappingID, route = mapping["mapping_id"], mapping["route"]
+			if route == stateRouteMappings[r] {
+				currentRouteMappings[r+"_mapping_id"] = mappingID
+				currentRouteMappings[r] = route
+				break
+			}
+		}
+	}
+	d.Set("route", [...]interface{}{currentRouteMappings})
 
 	// check if any old deposed resources still exist
 	if v, ok := d.GetOk("deposed"); ok {
@@ -921,6 +968,9 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 			"stage_route",
 			"live_route",
 		} {
+			if oldRouteConfig[r] == newRouteConfig[r] {
+				continue
+			}
 			if _, err := validateRoute(newRouteConfig, r, app.ID, rm); err != nil {
 				return err
 			}
@@ -946,10 +996,10 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 			addContent []map[string]interface{}
 		)
 
-		if appPathCalc, err := prepareApp(app, d, session.Log); err != nil {
+		appPathChan, errChan := prepareApp(app, d, session.Log)
+		appPath = <-appPathChan
+		if err := <-errChan; err != nil {
 			return err
-		} else {
-			appPath = appPathCalc
 		}
 
 		if v, ok = d.GetOk("add_content"); ok {
@@ -1124,62 +1174,74 @@ func setAppArguments(app cfapi.CCApp, d *schema.ResourceData) {
 	d.Set("ports", schema.NewSet(resourceIntegerSet, ports))
 }
 
-func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (path string, err error) {
+func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (<-chan string, <-chan error) {
+	pathChan := make(chan string, 1)
+	errChan := make(chan error, 1)
 
 	if v, ok := d.GetOk("url"); ok {
-		url := v.(string)
+		go func() {
+			var path string
+			var err error
+			url := v.(string)
 
-		if strings.HasPrefix(url, "file://") {
-			path = url[7:]
-		} else {
+			if strings.HasPrefix(url, "file://") {
+				path = url[7:]
+			} else {
 
-			var (
-				resp *http.Response
+				var (
+					resp *http.Response
 
-				in  io.ReadCloser
-				out *os.File
-			)
+					in  io.ReadCloser
+					out *os.File
+				)
 
-			if out, err = ioutil.TempFile("", "cfapp"); err != nil {
-				return "", err
+				if out, err = ioutil.TempFile("", "cfapp"); err == nil {
+					log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
+					if resp, err = http.Get(url); err == nil {
+						in = resp.Body
+						if _, err = io.Copy(out, in); err == nil {
+							if err = out.Close(); err == nil {
+								path = out.Name()
+							}
+						}
+					}
+				}
 			}
-
-			log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
-
-			if resp, err = http.Get(url); err != nil {
-				return "", err
-			}
-			in = resp.Body
-			if _, err = io.Copy(out, in); err != nil {
-				return "", err
-			}
-			if err = out.Close(); err != nil {
-				return "", err
-			}
-
-			path = out.Name()
-		}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+			return
+		}()
 
 	} else {
 		log.UI.Say("Retrieving application %s source / binary.", terminal.EntityNameColor(app.Name))
 
-		var repository repo.Repository
-		if repository, err = getRepositoryFromConfig(d); err != nil {
-			return path, err
-		}
+		_, isGithubRelease := d.GetOk("github_release")
+		repositoryChan, repoErrChan := getRepositoryFromConfigAsync(d)
+		go func() {
+			var path string
+			repository := <-repositoryChan
+			err := <-repoErrChan
+			if err != nil {
+				return
+			}
 
-		if _, ok := d.GetOk("github_release"); ok {
-			path = filepath.Dir(repository.GetPath())
-		} else {
-			path = repository.GetPath()
-		}
-	}
-	if err != nil {
-		return "", err
+			if isGithubRelease {
+				path = filepath.Dir(repository.GetPath())
+			} else {
+				path = repository.GetPath()
+			}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+		}()
 	}
 
-	log.UI.Say("Application downloaded to: %s", path)
-	return path, nil
+	return pathChan, errChan
 }
 
 func validateRoute(routeConfig map[string]interface{}, route string, appID string, rm *cfapi.RouteManager) (routeID string, err error) {
@@ -1223,7 +1285,11 @@ func updateMapping(
 		if len(oldRouteID) > 0 {
 			if v, ok := old[route+"_mapping_id"]; ok {
 				if err = rm.DeleteRouteMapping(v.(string)); err != nil {
-					return "", err
+					if strings.Contains(err.Error(), "status code: 404") {
+						err = nil
+					} else {
+						return "", err
+					}
 				}
 			}
 		}
