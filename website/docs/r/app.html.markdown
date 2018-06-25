@@ -40,6 +40,9 @@ The following arguments are supported:
 * `timeout` - (Optional, Number) Max wait time for app instance startup, in seconds
 * `stopped` - (Optional, Boolean) Defines the desired application state. Set to `false` to have the application remain in a stopped state. Default is `false`, i.e. application will be started.
 
+### Deployment
+* `disable_blue_green_deployment` - (Required, Boolean) The application won't be deployed using [Blue/Green-Deployment-Technique](https://docs.cloudfoundry.org/devguide/deploy-apps/blue-green.html). 
+
 ### Application Source / Binary
 
 One of the following arguments must be declared to locate application source or archive to be pushed.
@@ -73,6 +76,8 @@ One of the following arguments must be declared to locate application source or 
 ### Service bindings
 
 * `service_binding` - (Optional, Array) Service instances to bind to the application.
+
+* `service_binding` - (Optional, Array) Service instances to bind to.
 
   - `service_instance` - (Required, String) The service instance GUID.
   - `params` - (Optional, Map) A list of key/value parameters used by the service broker to create the binding.

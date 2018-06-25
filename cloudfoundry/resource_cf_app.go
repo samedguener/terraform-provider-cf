@@ -4,18 +4,20 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
+	"log"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
 	"code.cloudfoundry.org/cli/cf/terminal"
 
 	// "github.com/hashicorp/terraform/helper/hashcode"
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
-	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/repo"
 )
 
 // DefaultAppTimeout - Timeout (in seconds) when pushing apps to CF
@@ -34,6 +36,7 @@ func resourceApp() *schema.Resource {
 			State: resourceAppImport,
 		},
 
+		SchemaVersion: 1,
 		Schema: map[string]*schema.Schema{
 
 			"name": &schema.Schema{
@@ -242,10 +245,7 @@ func resourceApp() *schema.Resource {
 						"validation_script": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
-						},
-						"version": &schema.Schema{
-							Type:     schema.TypeString,
-							Optional: true,
+							Removed:  "Use blue_green.validation_script instead.",
 						},
 					},
 				},
@@ -272,6 +272,36 @@ func resourceApp() *schema.Resource {
 				Optional: true,
 				Computed: true,
 			},
+			"disable_blue_green_deployment": &schema.Schema{
+				Type:     schema.TypeBool,
+				Optional: true,
+				Removed:  "See new blue_green section instead to enable blue/green type updates.",
+			},
+			"blue_green": &schema.Schema{
+				Type:     schema.TypeList,
+				Optional: true,
+				MaxItems: 1,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"enable": &schema.Schema{
+							Type:     schema.TypeBool,
+							Optional: true,
+							Default:  false,
+						},
+						"validation_script": &schema.Schema{
+							Type:     schema.TypeString,
+							Optional: true,
+						},
+					},
+				},
+			},
+			"deposed": {
+				// This is not flagged as computed so that Terraform will always flag deposed resources as a change and allow us to attempt to clean them up
+				Type:         schema.TypeMap,
+				Optional:     true,
+				Description:  "Do not use this, this field is meant for internal use only. (It is not flagged as Computed for technical reasons.)",
+				ValidateFunc: validateAppDeposedMapEmpty,
+			},
 		},
 	}
 }
@@ -288,7 +318,98 @@ func validateAppHealthCheckType(v interface{}, k string) (ws []string, errs []er
 	return ws, errs
 }
 
-func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
+func validateAppDeposedMapEmpty(v interface{}, k string) (ws []string, errs []error) {
+	if len(v.(map[string]interface{})) != 0 {
+		errs = append(errs, fmt.Errorf("%q must not be set by the user", k))
+	}
+	return ws, errs
+}
+
+type cfAppConfig struct {
+	app             cfapi.CCApp
+	routeConfig     map[string]interface{}
+	serviceBindings []map[string]interface{}
+}
+
+func resourceAppCreate(d *schema.ResourceData, meta interface{}) error {
+
+	session := meta.(*cfapi.Session)
+	if session == nil {
+		return fmt.Errorf("client is nil")
+	}
+
+	var app cfapi.CCApp
+	app.Name = d.Get("name").(string)
+	app.SpaceGUID = d.Get("space").(string)
+	if v, ok := d.GetOk("ports"); ok {
+		p := []int{}
+		for _, vv := range v.(*schema.Set).List() {
+			p = append(p, vv.(int))
+		}
+		app.Ports = &p
+	}
+	if v, ok := d.GetOk("instances"); ok {
+		vv := v.(int)
+		app.Instances = &vv
+	}
+	if v, ok := d.GetOk("memory"); ok {
+		vv := v.(int)
+		app.Memory = &vv
+	}
+	if v, ok := d.GetOk("disk_quota"); ok {
+		vv := v.(int)
+		app.DiskQuota = &vv
+	}
+	if v, ok := d.GetOk("stack"); ok {
+		vv := v.(string)
+		app.StackGUID = &vv
+	}
+	if v, ok := d.GetOk("buildpack"); ok {
+		vv := v.(string)
+		app.Buildpack = &vv
+	}
+	if v, ok := d.GetOk("command"); ok {
+		vv := v.(string)
+		app.Command = &vv
+	}
+	if v, ok := d.GetOk("enable_ssh"); ok {
+		vv := v.(bool)
+		app.EnableSSH = &vv
+	}
+	if v, ok := d.GetOk("health_check_http_endpoint"); ok {
+		vv := v.(string)
+		app.HealthCheckHTTPEndpoint = &vv
+	}
+	if v, ok := d.GetOk("health_check_type"); ok {
+		vv := v.(string)
+		app.HealthCheckType = &vv
+	}
+	if v, ok := d.GetOk("health_check_timeout"); ok {
+		vv := v.(int)
+		app.HealthCheckTimeout = &vv
+	}
+	if v, ok := d.GetOk("environment"); ok {
+		vv := v.(map[string]interface{})
+		app.Environment = &vv
+	}
+
+	appConfig := cfAppConfig{
+		app: app,
+	}
+
+	if err := resourceAppCreateCfApp(d, meta, &appConfig); err != nil {
+		return err
+	}
+
+	d.SetId(appConfig.app.ID)
+	setAppArguments(appConfig.app, d)
+	d.Set("service_binding", appConfig.serviceBindings)
+	d.Set("route", []map[string]interface{}{appConfig.routeConfig})
+
+	return nil
+}
+
+func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig *cfAppConfig) (err error) {
 
 	session := meta.(*cfapi.Session)
 	if session == nil {
@@ -298,18 +419,11 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 	am := session.AppManager()
 	rm := session.RouteManager()
 
+	app := appConfig.app
 	var (
-		v  interface{}
-		ok bool
-
-		app cfapi.CCApp
-
-		appPath string
-
-		addContent []map[string]interface{}
+		v interface{}
 
 		defaultRoute, stageRoute, liveRoute string
-		//isBlueGreen                         bool
 
 		serviceBindings    []map[string]interface{}
 		hasServiceBindings bool
@@ -318,87 +432,27 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		hasRouteConfig bool
 	)
 
-	app.Name = d.Get("name").(string)
-	app.SpaceGUID = d.Get("space").(string)
-	if v, ok = d.GetOk("ports"); ok {
-		p := []int{}
-		for _, vv := range v.(*schema.Set).List() {
-			p = append(p, vv.(int))
-		}
-		app.Ports = &p
-	}
-	if v, ok = d.GetOk("instances"); ok {
-		vv := v.(int)
-		app.Instances = &vv
-	}
-	if v, ok = d.GetOk("memory"); ok {
-		vv := v.(int)
-		app.Memory = &vv
-	}
-	if v, ok = d.GetOk("disk_quota"); ok {
-		vv := v.(int)
-		app.DiskQuota = &vv
-	}
-	if v, ok = d.GetOk("stack"); ok {
-		vv := v.(string)
-		app.StackGUID = &vv
-	}
-	if v, ok = d.GetOk("buildpack"); ok {
-		vv := v.(string)
-		app.Buildpack = &vv
-	}
-	if v, ok = d.GetOk("command"); ok {
-		vv := v.(string)
-		app.Command = &vv
-	}
-	if v, ok = d.GetOk("enable_ssh"); ok {
-		vv := v.(bool)
-		app.EnableSSH = &vv
-	}
-	if v, ok = d.GetOk("add_content"); ok {
-		addContent = getListOfStructs(v)
-	}
-	if v, ok = d.GetOk("health_check_http_endpoint"); ok {
-		vv := v.(string)
-		app.HealthCheckHTTPEndpoint = &vv
-	}
-	if v, ok = d.GetOk("health_check_type"); ok {
-		vv := v.(string)
-		app.HealthCheckType = &vv
-	}
-	if v, ok = d.GetOk("health_check_timeout"); ok {
-		vv := v.(int)
-		app.HealthCheckTimeout = &vv
-	}
-	if v, ok = d.GetOk("environment"); ok {
-		vv := v.(map[string]interface{})
-		app.Environment = &vv
-	}
-
 	// Download application binary / source asynchronously
-	prepare := make(chan error)
-	go func() {
-		appPath, err = prepareApp(app, d, session.Log)
-		prepare <- err
-	}()
+	appPathChan, errChan := prepareApp(app, d, session.Log)
 
 	if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
-		//isBlueGreen = false
 
-		if defaultRoute, err = validateRoute(routeConfig, "default_route", rm); err != nil {
+		// ensure that if default route exists, that it is unbound or only bound to the existing application
+		if defaultRoute, err = validateRoute(routeConfig, "default_route", d.Id(), rm); err != nil {
 			return err
 		}
-		if stageRoute, err = validateRoute(routeConfig, "stage_route", rm); err != nil {
+		// ensure that if stage route exists, that it is unbound
+		if stageRoute, err = validateRoute(routeConfig, "stage_route", "", rm); err != nil {
 			return err
 		}
-		if liveRoute, err = validateRoute(routeConfig, "live_route", rm); err != nil {
+		// ensure that if live route exists, that it is unbound or only bound to the existing application
+		if liveRoute, err = validateRoute(routeConfig, "live_route", d.Id(), rm); err != nil {
 			return err
 		}
 
 		if len(stageRoute) > 0 && len(liveRoute) > 0 {
-			//isBlueGreen = true
 		} else if len(stageRoute) > 0 || len(liveRoute) > 0 {
 			err = fmt.Errorf("both 'stage_route' and 'live_route' need to be provided to deploy the app using blue-green routing")
 			return err
@@ -418,13 +472,19 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		return nil
 	}()
 
-	// Upload application binary / source
-	// asynchronously once download has completed
-	if err = <-prepare; err != nil {
-		return err
+	var addContent []map[string]interface{}
+	if v, ok := d.GetOk("add_content"); ok {
+		addContent = getListOfStructs(v)
 	}
+	// Upload application binary / source asynchronously once download has completed
 	upload := make(chan error)
 	go func() {
+		appPath := <-appPathChan
+		err := <-errChan
+		if err != nil {
+			upload <- err
+			return
+		}
 		err = am.UploadApp(app, appPath, addContent)
 		upload <- err
 	}()
@@ -436,13 +496,34 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	}
 
-	// Bind default route
-	if len(defaultRoute) > 0 {
-		var mappingID string
-		if mappingID, err = rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
-			return err
+	if d.Id() != "" {
+		// we're doing a blue/green deployment, so we need to bind the stage_route
+		if len(stageRoute) > 0 {
+			if mappingID, err := rm.CreateRouteMapping(stageRoute, app.ID, nil); err != nil {
+				return err
+			} else {
+				routeConfig["stage_route_mapping_id"] = mappingID
+			}
+		} else {
+			return fmt.Errorf("stage_route is not defined, blue/green deployment failed")
 		}
-		routeConfig["default_route_mapping_id"] = mappingID
+	} else {
+		// Bind default_route
+		if len(defaultRoute) > 0 {
+			if mappingID, err := rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
+				return err
+			} else {
+				routeConfig["default_route_mapping_id"] = mappingID
+			}
+		}
+		// Bind live_route
+		if len(liveRoute) > 0 {
+			if mappingID, err := rm.CreateRouteMapping(liveRoute, app.ID, nil); err != nil {
+				return err
+			} else {
+				routeConfig["live_route_mapping_id"] = mappingID
+			}
+		}
 	}
 
 	timeout := time.Second * time.Duration(d.Get("timeout").(int))
@@ -457,26 +538,20 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 		if err = am.StartApp(app.ID, timeout); err != nil {
 			return err
 		}
-
-		// Execute blue-green validation
-		// if isBlueGreen {
-		// }
 	}
 
 	if app, err = am.ReadApp(app.ID); err != nil {
 		return err
 	}
-	d.SetId(app.ID)
-
+	appConfig.app = app
 	session.Log.DebugMessage("Created app state: %# v", app)
-	setAppArguments(app, d)
 
 	if hasServiceBindings {
-		d.Set("service_binding", serviceBindings)
+		appConfig.serviceBindings = serviceBindings
 		session.Log.DebugMessage("Created service bindings: %# v", d.Get("service_binding"))
 	}
 	if hasRouteConfig {
-		d.Set("route", []map[string]interface{}{routeConfig})
+		appConfig.routeConfig = routeConfig
 		session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
 	}
 
@@ -497,11 +572,31 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 	var app cfapi.CCApp
 	if app, err = am.ReadApp(id); err != nil {
 		if strings.Contains(err.Error(), "status code: 404") {
-			d.MarkNewResource()
+			d.SetId("")
 			err = nil
 		}
 	} else {
 		setAppArguments(app, d)
+	}
+
+	var serviceBindings []map[string]interface{}
+	if serviceBindings, err = am.ReadServiceBindingsByApp(app.ID); err != nil {
+		return
+	}
+	var newStateServiceBindings []map[string]interface{}
+	for _, binding := range serviceBindings {
+		stateBindingData := make(map[string]interface{})
+		stateBindingData["service_instance"] = binding["service_instance"].(string)
+		stateBindingData["binding_id"] = binding["binding_id"].(string)
+		credentials := binding["credentials"].(map[string]interface{})
+		for k, v := range credentials {
+			credentials[k] = fmt.Sprintf("%v", v)
+		}
+		stateBindingData["credentials"] = credentials
+		newStateServiceBindings = append(newStateServiceBindings, stateBindingData)
+	}
+	if err := d.Set("service_binding", newStateServiceBindings); err != nil {
+		log.Printf("[WARN] Error setting service_binding to cf_app (%s): %s", d.Id(), err)
 	}
 
 	var routeMappings []map[string]interface{}
@@ -534,10 +629,92 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 	}
 	d.Set("route", [...]interface{}{currentRouteMappings})
 
+	// check if any old deposed resources still exist
+	if v, ok := d.GetOk("deposed"); ok {
+		deposedResources := v.(map[string]interface{})
+		for r, _ := range deposedResources {
+			if _, err := am.ReadApp(r); err != nil {
+				if strings.Contains(err.Error(), "status code: 404") {
+					delete(deposedResources, r)
+				}
+			} else {
+				delete(deposedResources, r)
+			}
+		}
+		if err := d.Set("deposed", deposedResources); err != nil {
+			return err
+		}
+	}
+
 	return err
 }
 
 func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
+	// preseve deposed resources until we clean them up
+	existingDeposed, _ := d.GetChange("deposed")
+	d.Set("deposed", existingDeposed)
+
+	session := meta.(*cfapi.Session)
+	if session == nil {
+		return fmt.Errorf("client is nil")
+	}
+
+	// TODO: clean-up old deposed resources
+
+	app := cfapi.CCApp{}
+
+	// Enable partial state mode
+	// We need to explicitly set state updates ourselves or
+	// tell terraform when a state change is applied and thus okay to persist
+	d.Partial(true)
+
+	update := false // for changes where no restart is required
+	app.Name = *getChangedValueString("name", &update, d)
+	app.SpaceGUID = *getChangedValueString("space", &update, d)
+	app.Instances = getChangedValueInt("instances", &update, d)
+	app.EnableSSH = getChangedValueBool("enable_ssh", &update, d)
+	app.HealthCheckHTTPEndpoint = getChangedValueString("health_check_http_endpoint", &update, d)
+	app.HealthCheckType = getChangedValueString("health_check_type", &update, d)
+	app.HealthCheckTimeout = getChangedValueInt("health_check_timeout", &update, d)
+
+	restart := false // for changes where just a restart is required
+	app.Ports = getChangedValueIntList("ports", &restart, d)
+	app.Memory = getChangedValueInt("memory", &restart, d)
+	app.DiskQuota = getChangedValueInt("disk_quota", &restart, d)
+	app.Command = getChangedValueString("command", &restart, d)
+
+	restage := false // for changes where a full restage is required
+	app.Buildpack = getChangedValueString("buildpack", &restage, d)
+	app.StackGUID = getChangedValueString("stack", &restage, d)
+	app.Environment = getChangedValueMap("environment", &restage, d)
+
+	blueGreen := false
+	if v, ok := d.GetOk("blue_green"); ok {
+		blueGreenConfig := v.([]interface{})[0].(map[string]interface{})
+		if blueGreenEnabled, ok := blueGreenConfig["enable"]; ok && blueGreenEnabled.(bool) {
+			if restart || restage || d.HasChange("service_binding") ||
+				d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
+				blueGreen = true
+			}
+		}
+	}
+
+	if blueGreen {
+		err = resourceAppBlueGreenUpdate(d, meta, app)
+	} else {
+		// fall back to a standard update to the existing app
+		err = resourceAppStandardUpdate(d, meta, app, update, restart, restage)
+	}
+
+	if err == nil {
+		// We succeeded, disable partial mode
+		d.Partial(false)
+	}
+
+	return err
+}
+
+func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp cfapi.CCApp) error {
 
 	session := meta.(*cfapi.Session)
 	if session == nil {
@@ -547,35 +724,187 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	am := session.AppManager()
 	rm := session.RouteManager()
 
-	app := cfapi.CCApp{
-		ID: d.Id(),
+	var venerableApp cfapi.CCApp
+	if v, err := am.ReadApp(d.Id()); err != nil {
+		return err
+	} else {
+		venerableApp = v
 	}
-	update := false
-	restage := false
-	restart := false
 
-	app.Name = *getChangedValueString("name", &update, d)
-	app.SpaceGUID = *getChangedValueString("space", &update, d)
-	app.Ports = getChangedValueIntList("ports", &update, d)
-	app.Instances = getChangedValueInt("instances", &update, d)
-	app.Memory = getChangedValueInt("memory", &update, d)
-	app.DiskQuota = getChangedValueInt("disk_quota", &update, d)
-	app.Command = getChangedValueString("command", &update, d)
-	app.EnableSSH = getChangedValueBool("enable_ssh", &update, d)
-	app.HealthCheckHTTPEndpoint = getChangedValueString("health_check_http_endpoint", &update, d)
-	app.HealthCheckType = getChangedValueString("health_check_type", &update, d)
-	app.HealthCheckTimeout = getChangedValueInt("health_check_timeout", &update, d)
+	// Update origin app name
+	if venerableAppRefeshed, err := am.UpdateApp(cfapi.CCApp{ID: d.Id(), Name: venerableApp.Name + "-venerable"}); err != nil {
+		return err
+	} else {
+		venerableApp = venerableAppRefeshed
+	}
 
-	app.Buildpack = getChangedValueString("buildpack", &restage, d)
-	app.Environment = getChangedValueMap("environment", &restage, d)
+	appConfig := cfAppConfig{
+		app: newApp,
+	}
+	appConfig.app.Instances = func(i int) *int { return &i }(1) // start the staged app with only one instance (we'll scale it up later)
+	if err := resourceAppCreateCfApp(d, meta, &appConfig); err != nil {
+		return err
+	}
+	appConfig.app.Instances = newApp.Instances // restore final expected instances count
+
+	// TODO: Execute blue-green validation
+
+	// now that we've passed validation, we've passed the point of no return
+	d.SetId(appConfig.app.ID)
+	d.SetPartial("url")
+	d.SetPartial("git")
+	d.SetPartial("github_release")
+	d.SetPartial("add_content")
+	d.SetPartial("service_binding")
+	setAppArguments(appConfig.app, d)
+
+	// ensure we keep track of the old application to clean it up later if we fail
+	deposedResources := d.Get("deposed").(map[string]interface{})
+	deposedResources[venerableApp.ID] = "application"
+	d.Set("deposed", deposedResources)
+
+	// Now bind the other routes to the new application instance and scale it up
+	// Bind default_route
+	if defaultRoute, err := validateRoute(appConfig.routeConfig, "default_route", venerableApp.ID, rm); err != nil {
+		return err
+	} else if len(defaultRoute) > 0 {
+		if mappingID, err := rm.CreateRouteMapping(defaultRoute, appConfig.app.ID, nil); err != nil {
+			return err
+		} else {
+			appConfig.routeConfig["default_route_mapping_id"] = mappingID
+		}
+	}
+	// Bind live_route
+	if liveRoute, err := validateRoute(appConfig.routeConfig, "live_route", venerableApp.ID, rm); err != nil {
+		return err
+	} else if len(liveRoute) > 0 {
+		if mappingID, err := rm.CreateRouteMapping(liveRoute, appConfig.app.ID, nil); err != nil {
+			return err
+		} else {
+			appConfig.routeConfig["live_route_mapping_id"] = mappingID
+		}
+	}
+	d.SetPartial("route")
+
+	var timeoutDuration time.Duration
+	if v, ok := d.GetOk("timeout"); ok {
+		vv := v.(int)
+		timeoutDuration = time.Second * time.Duration(vv)
+	}
+
+	// now scale up the new app and scale down the old app
+	venerableAppScale := cfapi.CCApp{
+		ID:        venerableApp.ID,
+		Name:      venerableApp.Name,
+		Instances: venerableApp.Instances,
+	}
+	newAppScale := cfapi.CCApp{
+		ID:        appConfig.app.ID,
+		Name:      appConfig.app.Name,
+		Instances: func(i int) *int { return &i }(1),
+	}
+	session.Log.DebugMessage("newApp.Instances: %d", *newApp.Instances)
+	session.Log.DebugMessage("venerableApp.Instances: %d", *venerableAppScale.Instances)
+	for *newAppScale.Instances < *newApp.Instances || *venerableAppScale.Instances > 1 {
+		if *newAppScale.Instances < *newApp.Instances {
+			// scale up new
+			*newAppScale.Instances++
+			session.Log.DebugMessage("Scaling up new app %s to instance count %d", newAppScale.ID, *newAppScale.Instances)
+			if _, err := am.UpdateApp(newAppScale); err != nil {
+				return err
+			}
+			if *(appConfig.app.State) != "STOPPED" {
+				// wait for the new instance to start
+				stateConf := &resource.StateChangeConf{
+					Pending: []string{"false"},
+					Target:  []string{"true"},
+					Refresh: func() (interface{}, string, error) {
+						c, err := am.CountRunningAppInstances(newAppScale)
+						return new(interface{}), strconv.FormatBool(c >= *newAppScale.Instances), err
+					},
+					Timeout:      timeoutDuration,
+					PollInterval: 5 * time.Second,
+				}
+				if _, err := stateConf.WaitForState(); err != nil {
+					return err
+				}
+			}
+		}
+
+		if *venerableAppScale.Instances > 1 {
+			// scale down old
+			*venerableAppScale.Instances--
+			session.Log.DebugMessage("Scaling down venerable app %s to instance count %d", venerableAppScale.ID, *venerableAppScale.Instances)
+			if _, err := am.UpdateApp(venerableAppScale); err != nil {
+				return err
+			}
+			if *venerableApp.State != "STOPPED" {
+				// wait for the instance to stop
+				stateConf := &resource.StateChangeConf{
+					Pending: []string{"false"},
+					Target:  []string{"true"},
+					Refresh: func() (interface{}, string, error) {
+						c, err := am.CountRunningAppInstances(venerableApp)
+						return new(interface{}), strconv.FormatBool(c <= *venerableApp.Instances), err
+					},
+					Timeout:      timeoutDuration,
+					PollInterval: 5 * time.Second,
+				}
+				if _, err := stateConf.WaitForState(); err != nil {
+					return err
+				}
+			}
+		}
+	}
+
+	// now delete the old application
+	if err := am.DeleteApp(venerableAppScale.ID, true); err != nil {
+		return err
+	} else {
+		deposedResources := d.Get("deposed").(map[string]interface{})
+		delete(deposedResources, venerableApp.ID)
+		d.Set("deposed", deposedResources)
+	}
+
+	// TODO: unmap stage route?
+
+	return nil
+}
+
+func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfapi.CCApp, update bool, restart bool, restage bool) error {
+	session := meta.(*cfapi.Session)
+	if session == nil {
+		return fmt.Errorf("client is nil")
+	}
+
+	am := session.AppManager()
+	rm := session.RouteManager()
+
+	app.ID = d.Id()
 
 	if update || restart || restage {
+		// push any updates to CF, we'll do any restage/restart later
+		var err error
 		if app, err = am.UpdateApp(app); err != nil {
 			return err
 		}
 		setAppArguments(app, d)
+		d.SetPartial("name")
+		d.SetPartial("space")
+		d.SetPartial("ports")
+		d.SetPartial("instances")
+		d.SetPartial("memory")
+		d.SetPartial("disk_quota")
+		d.SetPartial("command")
+		d.SetPartial("enable_ssh")
+		d.SetPartial("health_check_http_endpoint")
+		d.SetPartial("health_check_type")
+		d.SetPartial("health_check_timeout")
+		d.SetPartial("buildpack")
+		d.SetPartial("environment")
 	}
 
+	// update the application's service bindings (the necessary restage is dealt with later)
 	if d.HasChange("service_binding") {
 
 		old, new := d.GetChange("service_binding")
@@ -586,15 +915,13 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 		session.Log.DebugMessage("Service bindings to be deleted: %# v", bindingsToDelete)
 		session.Log.DebugMessage("Service bindings to be added: %# v", bindingsToAdd)
 
-		if err = removeServiceBindings(bindingsToDelete, am, session.Log); err != nil {
+		if err := removeServiceBindings(bindingsToDelete, am, session.Log); err != nil {
 			return err
 		}
 
-		var added []map[string]interface{}
-		if added, err = addServiceBindings(app.ID, bindingsToAdd, am, session.Log); err != nil {
+		if added, err := addServiceBindings(app.ID, bindingsToAdd, am, session.Log); err != nil {
 			return err
-		}
-		if len(added) > 0 {
+		} else if len(added) > 0 {
 			if new != nil {
 				for _, b := range new.([]interface{}) {
 					bb := b.(map[string]interface{})
@@ -610,6 +937,9 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 				d.Set("service_binding", new)
 			}
 		}
+		// the changes were applied, in CF even though they might not have taken effect
+		// in the application, we'll allow the state updates for this property to occur
+		d.SetPartial("service_binding")
 		restage = true
 	}
 
@@ -618,7 +948,6 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 		var (
 			oldRouteConfig, newRouteConfig map[string]interface{}
-			mappingID                      string
 		)
 
 		oldA := old.([]interface{})
@@ -639,18 +968,23 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 			"stage_route",
 			"live_route",
 		} {
-			if _, err = validateRoute(newRouteConfig, r, rm); err != nil {
-				return
+			if oldRouteConfig[r] == newRouteConfig[r] {
+				continue
 			}
-			if mappingID, err = updateAppRouteMappings(oldRouteConfig, newRouteConfig, r, app.ID, rm); err != nil {
-				return
+			if _, err := validateRoute(newRouteConfig, r, app.ID, rm); err != nil {
+				return err
 			}
-			if len(mappingID) > 0 {
+			if mappingID, err := updateAppRouteMappings(oldRouteConfig, newRouteConfig, r, app.ID, rm); err != nil {
+				return err
+			} else if len(mappingID) > 0 {
 				newRouteConfig[r+"_mapping_id"] = mappingID
 			}
 		}
+		d.Set("route", [...]interface{}{newRouteConfig})
+		d.SetPartial("route")
 	}
 
+	binaryUpdated := false // check if we need to update the application's binary
 	if d.HasChange("url") || d.HasChange("git") || d.HasChange("github_release") || d.HasChange("add_content") {
 
 		var (
@@ -662,40 +996,82 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 			addContent []map[string]interface{}
 		)
 
-		if appPath, err = prepareApp(app, d, session.Log); err != nil {
+		appPathChan, errChan := prepareApp(app, d, session.Log)
+		appPath = <-appPathChan
+		if err := <-errChan; err != nil {
 			return err
 		}
+
 		if v, ok = d.GetOk("add_content"); ok {
 			addContent = getListOfStructs(v)
 		}
-		if err = am.UploadApp(app, appPath, addContent); err != nil {
+
+		if err := am.UploadApp(app, appPath, addContent); err != nil {
 			return err
 		}
-		restage = true
+		binaryUpdated = true
 	}
 
+	// now that all of the reconfiguration is done, we can deal doing a restage or restart, as required
 	timeout := time.Second * time.Duration(d.Get("timeout").(int))
 
+	// check the package state of the application after binary upload
+	var curApp cfapi.CCApp
+	var readErr error
+	if curApp, readErr = am.ReadApp(app.ID); readErr != nil {
+		return readErr
+	}
+	if binaryUpdated || restage {
+		// There seem to be more types of updates that can automagically put an app's package_stage into "PENDING"
+		// for right now, I have observed this after a service binding update as well, but I have no idea what other
+		// optierations might cause this.  For now, we'll just do a blanket check since calling restage when the app
+		// is in this state causes the API to throw an error.
+		time.Sleep(time.Second * time.Duration(5)) // pause for a few seconds here to ensure the CF API has caught up
+		if *curApp.PackageState != "PENDING" {
+			// if it's not already pending, we need to restage
+			restage = true
+		} else {
+			// uploading the binary flagged the app for restaging,
+			// but we need to restart in order to force that to happen now
+			// (this is how the CF CLI does this)
+			restage = false
+			restart = true
+		}
+	}
+
 	if restage {
-		if err = am.RestageApp(app.ID, timeout); err != nil {
+		if err := am.RestageApp(app.ID, timeout); err != nil {
+			return err
+		}
+		if *curApp.State == "STARTED" {
+			// if the app was running before the restage when wait for it to start again
+			if err := am.WaitForAppToStart(app, timeout); err != nil {
+				return err
+			}
+		}
+	} else if restart && !d.Get("stopped").(bool) { // only run restart if the final state is running
+		if err := am.StopApp(app.ID, timeout); err != nil {
+			return err
+		}
+		if err := am.StartApp(app.ID, timeout); err != nil {
 			return err
 		}
 	}
-	if d.HasChange("stopped") {
 
+	// now set the final started/stopped state, whatever it is
+	if d.HasChange("stopped") {
 		if d.Get("stopped").(bool) {
-			if err = am.StopApp(app.ID, timeout); err != nil {
+			if err := am.StopApp(app.ID, timeout); err != nil {
 				return err
 			}
 		} else {
-			if err = am.StartApp(app.ID, timeout); err != nil {
+			if err := am.StartApp(app.ID, timeout); err != nil {
 				return err
 			}
 		}
-	} else if restage {
-		err = am.WaitForAppToStart(app, timeout)
 	}
-	return err
+
+	return nil
 }
 
 func resourceAppDelete(d *schema.ResourceData, meta interface{}) (err error) {
@@ -788,8 +1164,8 @@ func setAppArguments(app cfapi.CCApp, d *schema.ResourceData) {
 		d.Set("environment", app.Environment)
 	}
 
-	d.Set("timeout", d.Get("timeout"))
-	d.Set("stopped", d.Get("stopped"))
+	d.SetPartial("timeout")
+	d.Set("stopped", *app.State != "STARTED")
 
 	ports := []interface{}{}
 	for _, p := range *app.Ports {
@@ -798,65 +1174,77 @@ func setAppArguments(app cfapi.CCApp, d *schema.ResourceData) {
 	d.Set("ports", schema.NewSet(resourceIntegerSet, ports))
 }
 
-func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (path string, err error) {
+func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (<-chan string, <-chan error) {
+	pathChan := make(chan string, 1)
+	errChan := make(chan error, 1)
 
 	if v, ok := d.GetOk("url"); ok {
-		url := v.(string)
+		go func() {
+			var path string
+			var err error
+			url := v.(string)
 
-		if strings.HasPrefix(url, "file://") {
-			path = url[7:]
-		} else {
+			if strings.HasPrefix(url, "file://") {
+				path = url[7:]
+			} else {
 
-			var (
-				resp *http.Response
+				var (
+					resp *http.Response
 
-				in  io.ReadCloser
-				out *os.File
-			)
+					in  io.ReadCloser
+					out *os.File
+				)
 
-			if out, err = ioutil.TempFile("", "cfapp"); err != nil {
-				return "", err
+				if out, err = ioutil.TempFile("", "cfapp"); err == nil {
+					log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
+					if resp, err = http.Get(url); err == nil {
+						in = resp.Body
+						if _, err = io.Copy(out, in); err == nil {
+							if err = out.Close(); err == nil {
+								path = out.Name()
+							}
+						}
+					}
+				}
 			}
-
-			log.UI.Say("Downloading application %s from url %s.", terminal.EntityNameColor(app.Name), url)
-
-			if resp, err = http.Get(url); err != nil {
-				return "", err
-			}
-			in = resp.Body
-			if _, err = io.Copy(out, in); err != nil {
-				return "", err
-			}
-			if err = out.Close(); err != nil {
-				return "", err
-			}
-
-			path = out.Name()
-		}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+			return
+		}()
 
 	} else {
 		log.UI.Say("Retrieving application %s source / binary.", terminal.EntityNameColor(app.Name))
 
-		var repository repo.Repository
-		if repository, err = getRepositoryFromConfig(d); err != nil {
-			return path, err
-		}
+		_, isGithubRelease := d.GetOk("github_release")
+		repositoryChan, repoErrChan := getRepositoryFromConfigAsync(d)
+		go func() {
+			var path string
+			repository := <-repositoryChan
+			err := <-repoErrChan
+			if err != nil {
+				return
+			}
 
-		if _, ok := d.GetOk("github_release"); ok {
-			path = filepath.Dir(repository.GetPath())
-		} else {
-			path = repository.GetPath()
-		}
-	}
-	if err != nil {
-		return "", err
+			if isGithubRelease {
+				path = filepath.Dir(repository.GetPath())
+			} else {
+				path = repository.GetPath()
+			}
+			log.UI.Say("Application downloaded to: %s", path)
+			pathChan <- path
+			errChan <- err
+			close(pathChan)
+			close(errChan)
+		}()
 	}
 
-	log.UI.Say("Application downloaded to: %s", path)
-	return path, nil
+	return pathChan, errChan
 }
 
-func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager) (routeID string, err error) {
+func validateRoute(routeConfig map[string]interface{}, route string, appID string, rm *cfapi.RouteManager) (routeID string, err error) {
 
 	if v, ok := routeConfig[route]; ok {
 
@@ -864,6 +1252,11 @@ func validateRoute(routeConfig map[string]interface{}, route string, rm *cfapi.R
 
 		var mappings []map[string]interface{}
 		if mappings, err = rm.ReadRouteMappingsByRoute(routeID); err == nil && len(mappings) > 0 {
+			if len(mappings) == 1 {
+				if app, ok := mappings[0]["app"]; ok && app == appID {
+					return routeID, err
+				}
+			}
 			err = fmt.Errorf(
 				"route with id %s is already mapped. routes specificed in the 'route' argument can only be mapped to one 'cf_app' resource",
 				routeID)
