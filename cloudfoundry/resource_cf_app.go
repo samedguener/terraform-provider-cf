@@ -13,8 +13,6 @@ import (
 
 	"code.cloudfoundry.org/cli/cf/terminal"
 
-	// "github.com/hashicorp/terraform/helper/hashcode"
-	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/validation"
 	"github.com/terraform-providers/terraform-provider-cloudfoundry/cloudfoundry/cfapi"
@@ -37,7 +35,7 @@ func resourceApp() *schema.Resource {
 			State: resourceAppImport,
 		},
 
-		SchemaVersion: 1,
+		SchemaVersion: 2,
 		Schema: map[string]*schema.Schema{
 
 			"name": &schema.Schema{
@@ -262,7 +260,40 @@ func resourceApp() *schema.Resource {
 						"validation_script": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
-							Removed:  "Use blue_green.validation_script instead.",
+						},
+					},
+				},
+			},
+			"routes": &schema.Schema{
+				Type:          schema.TypeSet,
+				Optional:      true,
+				MinItems:      1,
+				ConflictsWith: []string{"route"},
+				Set:           hashRouteMappingSet,
+				Elem: &schema.Resource{
+					Schema: map[string]*schema.Schema{
+						"route": &schema.Schema{
+							Type:         schema.TypeString,
+							Required:     true,
+							ValidateFunc: validation.NoZeroValues,
+						},
+						"port": &schema.Schema{
+							Type:         schema.TypeInt,
+							Optional:     true,
+							Computed:     true,
+							Deprecated:   "Not yet implemented!",
+							ValidateFunc: validation.IntBetween(1, 65535),
+						},
+						"mapping_id": &schema.Schema{
+							Type:     schema.TypeString,
+							Computed: true,
+						},
+						"exclusive": &schema.Schema{
+							Type:        schema.TypeBool,
+							Description: "Should terraform remove all mappings of this route not declared here?",
+							Deprecated:  "Not yet implemented!",
+							Optional:    true,
+							Default:     true,
 						},
 					},
 				},
@@ -393,7 +424,27 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) error {
 		return fmt.Errorf("client is nil")
 	}
 
-	var app cfapi.CCApp
+	am := session.AppManager()
+	rm := session.RouteManager()
+
+	var (
+		v  interface{}
+		ok bool
+
+		app cfapi.CCApp
+
+		appPath string
+
+		addContent []map[string]interface{}
+
+		defaultRoute string
+
+		serviceBindings    []map[string]interface{}
+		hasServiceBindings bool
+
+		routeConfig map[string]interface{}
+	)
+
 	app.Name = d.Get("name").(string)
 	app.SpaceGUID = d.Get("space").(string)
 	if v, ok := d.GetOk("ports"); ok {
@@ -512,22 +563,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
 
-		// ensure that if default route exists, that it is unbound or only bound to the existing application
-		if defaultRoute, err = validateRoute(routeConfig, "default_route", d.Id(), rm); err != nil {
-			return err
-		}
-		// ensure that if stage route exists, that it is unbound
-		if stageRoute, err = validateRoute(routeConfig, "stage_route", "", rm); err != nil {
-			return err
-		}
-		// ensure that if live route exists, that it is unbound or only bound to the existing application
-		if liveRoute, err = validateRoute(routeConfig, "live_route", d.Id(), rm); err != nil {
-			return err
-		}
-
-		if len(stageRoute) > 0 && len(liveRoute) > 0 {
-		} else if len(stageRoute) > 0 || len(liveRoute) > 0 {
-			err = fmt.Errorf("both 'stage_route' and 'live_route' need to be provided to deploy the app using blue-green routing")
+		if defaultRoute, err = validateRouteLegacy(routeConfig, "default_route", rm); err != nil {
 			return err
 		}
 	}
@@ -589,39 +625,41 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 		}
 	}
 
-	if d.Id() != "" {
-		// we're doing a blue/green deployment, so we need to bind the stage_route
-		if len(stageRoute) > 0 {
-			if mappingID, err := rm.CreateRouteMapping(stageRoute, app.ID, nil); err != nil {
-				return err
-			} else {
-				routeConfig["stage_route_mapping_id"] = mappingID
-			}
-		} else {
-			return fmt.Errorf("stage_route is not defined, blue/green deployment failed")
-		}
-	} else {
-		// Bind default_route
+	if _, hasRouteConfig := d.GetOk("route"); hasRouteConfig {
+		// old style route block
 		if len(defaultRoute) > 0 {
-			if mappingID, err := rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
+			// Bind default route
+			var mappingID string
+			if mappingID, err = rm.CreateRouteMapping(defaultRoute, app.ID, nil); err != nil {
+				return err
+			}
+			routeConfig["default_route_mapping_id"] = mappingID
+			d.Set("route", []map[string]interface{}{routeConfig})
+			session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
+		}
+	} else if v, hasRouteConfig := d.GetOk("routes"); hasRouteConfig {
+		// new style routes block
+		var mappedRoutes []interface{}
+		for _, r := range v.(*schema.Set).List() {
+			data := r.(map[string]interface{})
+			routeID := data["route"].(string)
+			if err := validateRoute("", routeID, rm); err != nil {
+				return err
+			}
+			if mappingID, err := rm.CreateRouteMapping(routeID, app.ID, nil); err != nil {
 				return err
 			} else {
-				routeConfig["default_route_mapping_id"] = mappingID
+				data["mapping_id"] = mappingID
 			}
-		}
-		// Bind live_route
-		if len(liveRoute) > 0 {
-			if mappingID, err := rm.CreateRouteMapping(liveRoute, app.ID, nil); err != nil {
+			// read mapping port
+			if mapping, err := rm.ReadRouteMapping(data["mapping_id"].(string)); err != nil {
 				return err
 			} else {
-				routeConfig["live_route_mapping_id"] = mappingID
+				data["port"] = mapping.AppPort
 			}
+			mappedRoutes = append(mappedRoutes, data)
 		}
-	}
-
-	// Skip if Docker repo is given
-	if _, ok := d.GetOk("docker_image"); !ok {
-		if err = <-upload; err != nil {
+		if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, mappedRoutes)); err != nil {
 			return err
 		}
 	}
@@ -653,10 +691,6 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 		appConfig.serviceBindings = serviceBindings
 		session.Log.DebugMessage("Created service bindings: %# v", d.Get("service_binding"))
 	}
-	if hasRouteConfig {
-		appConfig.routeConfig = routeConfig
-		session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
-	}
 
 	return err
 }
@@ -680,78 +714,67 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	} else {
 		setAppArguments(app, d)
-
-		if _, hasOldRoute := d.GetOk("route"); hasOldRoute {
-			var routeMappings []map[string]interface{}
-			if routeMappings, err = rm.ReadRouteMappingsByApp(app.ID); err != nil {
-				return
-			}
-			var stateRouteList = d.Get("route").([]interface{})
-			var stateRouteMappings map[string]interface{}
-			if len(stateRouteList) == 1 && stateRouteList[0] != nil {
-				stateRouteMappings = stateRouteList[0].(map[string]interface{})
-			} else {
-				stateRouteMappings = make(map[string]interface{})
-			}
-			currentRouteMappings := make(map[string]interface{})
-			mappingFound := false
-			for _, r := range []string{
-				"default_route",
-				"stage_route",
-				"live_route",
-			} {
-				currentRouteMappings[r] = ""
-				currentRouteMappings[r+"_mapping_id"] = ""
-				for _, mapping := range routeMappings {
-					var route, mappingID = mapping["route"], mapping["mapping_id"]
-					if route == stateRouteMappings[r] {
-						mappingFound = true
-						currentRouteMappings[r] = route
-						currentRouteMappings[r+"_mapping_id"] = mappingID
-						break
-					}
-				}
-			}
-			if mappingFound {
-				d.Set("route", []map[string]interface{}{currentRouteMappings})
-			}
-		} else if srd, hasNewRoutes := d.GetOk("routes"); hasNewRoutes {
-			stateRoutes := srd.(*schema.Set)
-			if currentRouteMappings, err := rm.ReadRouteMappingsByApp(app.ID); err != nil {
-				return err
-			} else {
-				var updatedRoutes []interface{}
-				for _, mapping := range currentRouteMappings {
-
-					refreshedData := map[string]interface{}{
-						"mapping_id": mapping["mapping_id"].(string),
-						"port":       mapping["port"].(int),
-						"route":      mapping["route"].(string),
-					}
-					if stateRoutes.Contains(refreshedData) {
-						updatedRoutes = append(updatedRoutes, refreshedData)
-					}
-				}
-				if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, updatedRoutes)); err != nil {
-					return err
-				}
-			}
-		}
 	}
 
-	// check if any old deposed resources still exist
-	if v, ok := d.GetOk("deposed"); ok {
-		deposedResources := v.(map[string]interface{})
-		for r, _ := range deposedResources {
-			if _, err := am.ReadApp(r); err != nil {
-				if strings.Contains(err.Error(), "status code: 404") {
-					delete(deposedResources, r)
+	if _, hasOldRoute := d.GetOk("route"); hasOldRoute {
+		var routeMappings []map[string]interface{}
+		if routeMappings, err = rm.ReadRouteMappingsByApp(app.ID); err != nil {
+			return
+		}
+		var stateRouteList = d.Get("route").([]interface{})
+		var stateRouteMappings map[string]interface{}
+		if len(stateRouteList) == 1 && stateRouteList[0] != nil {
+			stateRouteMappings = stateRouteList[0].(map[string]interface{})
+		} else {
+			stateRouteMappings = make(map[string]interface{})
+		}
+		currentRouteMappings := make(map[string]interface{})
+		for _, r := range []string{
+			"default_route",
+			"stage_route",
+			"live_route",
+		} {
+			currentRouteMappings[r] = ""
+			currentRouteMappings[r+"_mapping_id"] = ""
+			for _, mapping := range routeMappings {
+				var mappingID, route = mapping["mapping_id"], mapping["route"]
+				if route == stateRouteMappings[r] {
+					currentRouteMappings[r+"_mapping_id"] = mappingID
+					currentRouteMappings[r] = route
+					break
 				}
-			} else {
-				delete(deposedResources, r)
 			}
 		}
-		if err := d.Set("deposed", deposedResources); err != nil {
+		d.Set("route", [...]interface{}{currentRouteMappings})
+	} else if routeState, hasNewRoutes := d.GetOk("routes"); hasNewRoutes {
+		routesList := routeState.(*schema.Set).List()
+		var updatedRoutes []interface{}
+		for _, r := range routesList {
+			stateData := r.(map[string]interface{})
+			if mappingID, ok := stateData["mapping_id"].(string); ok && len(mappingID) > 0 {
+				if mapping, err := rm.ReadRouteMapping(mappingID); err != nil {
+					return err
+				} else {
+					if mapping.AppID != appID {
+						// this should never happen!
+						return fmt.Errorf("route mapping %s does not point to the current app (%s)", mappingID, appID)
+					}
+					refreshedData := map[string]interface{}{
+						"mapping_id": mapping.ID,
+						"port":       mapping.AppPort,
+						"route":      mapping.RouteID,
+					}
+					if stateRouteID, ok := stateData["route"].(string); ok && len(stateRouteID) > 0 {
+						refreshedData["exclusive"] = stateData["exclusive"]
+					}
+					updatedRoutes = append(updatedRoutes, refreshedData)
+				}
+			} else if routeID, ok := stateData["route"].(string); ok && len(routeID) > 0 {
+				// route listed in state, but with no mappingID?!?
+				// this means we need to recreate it so we'll exclude it from the refreshed state
+			}
+		}
+		if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, updatedRoutes)); err != nil {
 			return err
 		}
 	}
@@ -1505,7 +1528,22 @@ func prepareApp(app cfapi.CCApp, d *schema.ResourceData, log *cfapi.Logger) (pat
 	return path, nil
 }
 
-func validateRoute(routeConfig map[string]interface{}, route string, appID string, rm *cfapi.RouteManager) (routeID string, err error) {
+func validateRoute(appID string, routeID string, rm *cfapi.RouteManager) error {
+	if mappings, err := rm.ReadRouteMappingsByRoute(routeID); err == nil && len(mappings) > 0 {
+		if len(mappings) == 1 {
+			if boundApp, ok := mappings[0]["app"]; ok && boundApp == appID {
+				return nil
+			}
+		}
+		return fmt.Errorf(
+			"route with id %s is already mapped. routes specificed in the 'routes' argument can only be mapped to one 'cf_app' resource",
+			routeID)
+	} else {
+		return err
+	}
+}
+
+func validateRouteLegacy(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager) (routeID string, err error) {
 
 	if v, ok := routeConfig[route]; ok {
 
