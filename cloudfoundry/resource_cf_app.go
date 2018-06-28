@@ -35,7 +35,7 @@ func resourceApp() *schema.Resource {
 			State: resourceAppImport,
 		},
 
-		SchemaVersion: 2,
+		SchemaVersion: 4,
 		Schema: map[string]*schema.Schema{
 
 			"name": &schema.Schema{
@@ -227,8 +227,8 @@ func resourceApp() *schema.Resource {
 				Type:          schema.TypeList,
 				Optional:      true,
 				MaxItems:      1,
-				ConflictsWith: []string{"routes"},
-				Deprecated:    "Use the new 'routes' block.",
+				ConflictsWith: []string{"routes", "blue_green"},
+				Deprecated:    "Use the new 'routes' block for live routes and see the blue_green section for staging routes.",
 				Elem: &schema.Resource{
 					Schema: map[string]*schema.Schema{
 						"default_route": &schema.Schema{
@@ -366,6 +366,32 @@ func resourceApp() *schema.Resource {
 						"validation_script": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
+						},
+						"staging_route": &schema.Schema{
+							Type:     schema.TypeSet,
+							Required: true,
+							MinItems: 1,
+							Set:      hashRouteMappingSet,
+							Elem: &schema.Resource{
+								Schema: map[string]*schema.Schema{
+									"route": &schema.Schema{
+										Type:         schema.TypeString,
+										Required:     true,
+										ValidateFunc: validation.NoZeroValues,
+									},
+									"port": &schema.Schema{
+										Type:         schema.TypeInt,
+										Optional:     true,
+										Computed:     true,
+										Deprecated:   "Not yet implemented!",
+										ValidateFunc: validation.IntBetween(1, 65535),
+									},
+									"mapping_id": &schema.Schema{
+										Type:     schema.TypeString,
+										Computed: true,
+									},
+								},
+							},
 						},
 					},
 				},
@@ -637,30 +663,12 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 			d.Set("route", []map[string]interface{}{routeConfig})
 			session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
 		}
-	} else if v, hasRouteConfig := d.GetOk("routes"); hasRouteConfig {
-		// new style routes block
-		var mappedRoutes []interface{}
-		for _, r := range v.(*schema.Set).List() {
-			data := r.(map[string]interface{})
-			routeID := data["route"].(string)
-			if err := validateRoute("", routeID, rm); err != nil {
-				return err
-			}
-			if mappingID, err := rm.CreateRouteMapping(routeID, app.ID, nil); err != nil {
-				return err
-			} else {
-				data["mapping_id"] = mappingID
-			}
-			// read mapping port
-			if mapping, err := rm.ReadRouteMapping(data["mapping_id"].(string)); err != nil {
-				return err
-			} else {
-				data["port"] = mapping.AppPort
-			}
-			mappedRoutes = append(mappedRoutes, data)
-		}
-		if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, mappedRoutes)); err != nil {
+	} else if v, hasRouteConfig := d.GetOk("routes"); hasRouteConfig && d.Id() == "" {
+		// only bind live routes at this stage if we're not doing a blue/green deployment
+		if mappedRoutes, err := addRouteMappings(app.ID, v.(*schema.Set).List(), "", rm); err != nil {
 			return err
+		} else {
+			appConfig.routesConfig = mappedRoutes
 		}
 	}
 
@@ -1543,7 +1551,31 @@ func validateRoute(appID string, routeID string, rm *cfapi.RouteManager) error {
 	}
 }
 
-func validateRouteLegacy(routeConfig map[string]interface{}, route string, rm *cfapi.RouteManager) (routeID string, err error) {
+func addRouteMappings(appID string, routes []interface{}, validCurrentAppMapping string, rm *cfapi.RouteManager) ([]interface{}, error) {
+	var mappedRoutes []interface{}
+	for _, r := range routes {
+		data := r.(map[string]interface{})
+		routeID := data["route"].(string)
+		if err := validateRoute(validCurrentAppMapping, routeID, rm); err != nil {
+			return nil, err
+		}
+		if mappingID, err := rm.CreateRouteMapping(routeID, appID, nil); err != nil {
+			return nil, err
+		} else {
+			data["mapping_id"] = mappingID
+		}
+		// read mapping port
+		if mapping, err := rm.ReadRouteMapping(data["mapping_id"].(string)); err != nil {
+			return nil, err
+		} else {
+			data["port"] = mapping.AppPort
+		}
+		mappedRoutes = append(mappedRoutes, data)
+	}
+	return mappedRoutes, nil
+}
+
+func validateRouteLegacy(routeConfig map[string]interface{}, route string, appID string, rm *cfapi.RouteManager) (routeID string, err error) {
 
 	if v, ok := routeConfig[route]; ok {
 
