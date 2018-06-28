@@ -669,6 +669,7 @@ func TestAccApp_app1(t *testing.T) {
 			case check := <-testComplete:
 				done = check
 				downtimeCheck <- err
+				close(downtimeCheck)
 				return
 			default:
 			}
@@ -682,6 +683,7 @@ func TestAccApp_app1(t *testing.T) {
 			case check := <-testComplete:
 				done = check
 				downtimeCheck <- err
+				close(downtimeCheck)
 				return
 			default:
 			}
@@ -691,6 +693,7 @@ func TestAccApp_app1(t *testing.T) {
 			}
 		}
 		downtimeCheck <- err
+		close(downtimeCheck)
 	}()
 
 	resource.Test(t,
@@ -741,16 +744,16 @@ func TestAccApp_app1(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "4"),
+						resource.TestCheckResourceAttr(refApp, "instances", "2"),
 						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
-						resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
+						resource.TestCheckResourceAttr(refApp, "service_binding.#", "1"),
 						resource.TestCheckNoResourceAttr(refApp, "route.#"),
-						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "2"),
 					),
 				},
 			},
