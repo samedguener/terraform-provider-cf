@@ -405,6 +405,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 			case check := <-testComplete:
 				done = check
 				downtimeCheck <- err
+				close(downtimeCheck)
 				return
 			default:
 			}
@@ -418,6 +419,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 			case check := <-testComplete:
 				done = check
 				downtimeCheck <- err
+				close(downtimeCheck)
 				return
 			default:
 			}
@@ -427,6 +429,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 			}
 		}
 		downtimeCheck <- err
+		close(downtimeCheck)
 	}()
 
 	resource.Test(t,
@@ -503,11 +506,6 @@ func TestAccApp_bluegreen(t *testing.T) {
 						}`,
 					),
 					Check: resource.ComposeAggregateTestCheckFunc(
-						func(*terraform.State) error {
-							testAccProvider.Meta().(*cfapi.Session).Log.DebugMessage("Checking if there was observed app downtime...")
-							testComplete <- true
-							return <-downtimeCheck
-						},
 						testAccCheckAppExists(refApp, func() (err error) {
 
 							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
@@ -529,6 +527,66 @@ func TestAccApp_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
 						resource.TestCheckNoResourceAttr(refApp, "route.#"),
 						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+
+				resource.TestStep{
+					// Note: I wanted to remove the fs2 service instance here as well, but currently terraform
+					//       does not wait to attempt deletion of fs2 and instead attempts to do it before (in parallel)
+					//       with updating the app resource
+					// Relevant Issue: https://github.com/hashicorp/terraform/issues/8617
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
+						`resource "cf_service_instance" "fs2" {
+							name = "fs2"
+							space = "${data.cf_space.space.id}"
+							service_plan = "${data.cf_service.rmq.service_plans.standard}"
+						}
+						resource "cf_route" "spring-music-2" {
+							domain = "${data.cf_domain.local.id}"
+							space = "${data.cf_space.space.id}"
+							hostname = "spring-music-2"
+						}`,
+						`instances = 2
+						blue_green {
+							enable = true
+						}
+						service_binding {
+							service_instance = "${cf_service_instance.db.id}"
+						}
+						routes {
+							route = "${cf_route.spring-music.id}"
+						}
+						routes {
+							route = "${cf_route.spring-music-2.id}"
+						}`,
+					),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						func(*terraform.State) error {
+							testAccProvider.Meta().(*cfapi.Session).Log.DebugMessage("Checking if there was observed app downtime...")
+							testComplete <- true
+							return <-downtimeCheck
+						},
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "2"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckResourceAttr(refApp, "service_binding.#", "1"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "2"),
 					),
 				},
 			},

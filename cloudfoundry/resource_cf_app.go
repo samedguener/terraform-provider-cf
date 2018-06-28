@@ -904,6 +904,8 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 				if _, err := stateConf.WaitForState(); err != nil {
 					return err
 				}
+				// CF gives shutting down processes at most 10 seconds to exit
+				time.Sleep(time.Second * time.Duration(10))
 			}
 		}
 	}
@@ -926,7 +928,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		d.Set("deposed", deposedResources)
 	}
 
-	// TODO: unmap stage route?
+	// TODO: unmap stage route
 
 	return nil
 }
