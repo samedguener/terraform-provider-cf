@@ -5,6 +5,7 @@ import (
 	"os"
 	"regexp"
 	"testing"
+	"time"
 
 	"code.cloudfoundry.org/cli/cf/errors"
 	"github.com/hashicorp/terraform/helper/resource"
@@ -652,10 +653,45 @@ func TestAccAppVersions_app1(t *testing.T) {
 			},
 		})
 }
+func TestAccApp_bluegreen(t *testing.T) {
 
 func TestAccApp_app1(t *testing.T) {
 
 	refApp := "cloudfoundry_app.java-spring"
+
+	downtimeCheck := make(chan error, 1)
+	testComplete := make(chan bool, 1)
+	go func() {
+		var err error
+		done := false
+		for !done {
+			select {
+			case check := <-testComplete:
+				done = check
+				downtimeCheck <- err
+				return
+			default:
+			}
+			time.Sleep(time.Second * time.Duration(1))
+			if err := assertHTTPResponse("https://spring-music."+defaultAppDomain(), 404, nil); err != nil {
+				break
+			}
+		}
+		for !done {
+			select {
+			case check := <-testComplete:
+				done = check
+				downtimeCheck <- err
+				return
+			default:
+			}
+			time.Sleep(time.Second * time.Duration(1) / 2)
+			if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+				break
+			}
+		}
+		downtimeCheck <- err
+	}()
 
 	resource.Test(t,
 		resource.TestCase{
@@ -678,16 +714,16 @@ func TestAccApp_app1(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "instances", "3"),
 						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "2"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
 					),
 				},
 
@@ -705,16 +741,16 @@ func TestAccApp_app1(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "2"),
-						resource.TestCheckResourceAttr(refApp, "memory", "1024"),
-						resource.TestCheckResourceAttr(refApp, "disk_quota", "1024"),
+						resource.TestCheckResourceAttr(refApp, "instances", "4"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
 					),
 				},
 			},
