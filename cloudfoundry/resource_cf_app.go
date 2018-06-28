@@ -811,6 +811,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		return err
 	}
 	appConfig.app.Instances = newApp.Instances // restore final expected instances count
+	newApp = appConfig.app                     // bring "newApp" var up-to-date, to help prevent bugs
 
 	// TODO: Execute blue-green validation, including mapping staging route(s)!
 
@@ -829,7 +830,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 	d.Set("deposed", deposedResources)
 
 	// Now bind the live routes to the new application instance and scale it up
-	if mappedRoutes, err := addRouteMappings(newApp.ID, d.Get("routes").(*schema.Set).List(), venerableApp.ID, rm); err != nil {
+	if mappedRoutes, err := addRouteMappings(appConfig.app.ID, d.Get("routes").(*schema.Set).List(), venerableApp.ID, rm); err != nil {
 		return err
 	} else {
 		appConfig.routesConfig = mappedRoutes

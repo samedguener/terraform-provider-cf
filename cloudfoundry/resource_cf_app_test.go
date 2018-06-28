@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"regexp"
 	"testing"
+	"time"
 
 	"code.cloudfoundry.org/cli/cf/errors"
 
@@ -390,9 +391,43 @@ func TestAccApp_app1(t *testing.T) {
 			},
 		})
 }
-func TestAccApp_app1_bluegreen(t *testing.T) {
+func TestAccApp_bluegreen(t *testing.T) {
 
 	refApp := "cf_app.spring-music"
+
+	downtimeCheck := make(chan error, 1)
+	testComplete := make(chan bool, 1)
+	go func() {
+		var err error
+		done := false
+		for !done {
+			select {
+			case check := <-testComplete:
+				done = check
+				downtimeCheck <- err
+				return
+			default:
+			}
+			time.Sleep(time.Second * time.Duration(1))
+			if err := assertHTTPResponse("https://spring-music."+defaultAppDomain(), 404, nil); err != nil {
+				break
+			}
+		}
+		for !done {
+			select {
+			case check := <-testComplete:
+				done = check
+				downtimeCheck <- err
+				return
+			default:
+			}
+			time.Sleep(time.Second * time.Duration(1) / 2)
+			if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+				break
+			}
+		}
+		downtimeCheck <- err
+	}()
 
 	resource.Test(t,
 		resource.TestCase{
@@ -402,8 +437,23 @@ func TestAccApp_app1_bluegreen(t *testing.T) {
 			Steps: []resource.TestStep{
 
 				resource.TestStep{
-					Config: fmt.Sprintf(appResourceSpringMusic, defaultAppDomain()),
-					Check: resource.ComposeTestCheckFunc(
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
+						``,
+						`instances = 3
+						blue_green {
+							enable = true
+						}
+						service_binding {
+							service_instance = "${cf_service_instance.db.id}"
+						}
+						service_binding {
+							service_instance = "${cf_service_instance.fs1.id}"
+						}
+						routes {
+							route = "${cf_route.spring-music.id}"
+						}`,
+					),
+					Check: resource.ComposeAggregateTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
 
 							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
@@ -415,22 +465,49 @@ func TestAccApp_app1_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "2"),
+						resource.TestCheckResourceAttr(refApp, "instances", "3"),
 						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "2"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
 					),
 				},
 
 				resource.TestStep{
-					Config: fmt.Sprintf(appResourceSpringMusicBlueGreenUpdate, defaultAppDomain()),
-					Check: resource.ComposeTestCheckFunc(
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
+						`resource "cf_service_instance" "fs2" {
+							name = "fs2"
+							space = "${data.cf_space.space.id}"
+							service_plan = "${data.cf_service.rmq.service_plans.standard}"
+						}`,
+						`instances = 4
+						blue_green {
+							enable = true
+						}
+						service_binding {
+							service_instance = "${cf_service_instance.db.id}"
+						}
+						service_binding {
+							service_instance = "${cf_service_instance.fs1.id}"
+						}
+						service_binding {
+							service_instance = "${cf_service_instance.fs2.id}"
+						}
+						routes {
+							route = "${cf_route.spring-music.id}"
+						}`,
+					),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						func(*terraform.State) error {
+							testAccProvider.Meta().(*cfapi.Session).Log.DebugMessage("Checking if there was observed app downtime...")
+							testComplete <- true
+							return <-downtimeCheck
+						},
 						testAccCheckAppExists(refApp, func() (err error) {
 
 							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
@@ -438,20 +515,20 @@ func TestAccApp_app1_bluegreen(t *testing.T) {
 							}
 							return
 						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music-updated"),
+						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "3"),
-						resource.TestCheckResourceAttr(refApp, "memory", "1024"),
-						resource.TestCheckResourceAttr(refApp, "disk_quota", "1024"),
+						resource.TestCheckResourceAttr(refApp, "instances", "4"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
-						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
 					),
 				},
 			},
