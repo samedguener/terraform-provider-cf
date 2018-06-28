@@ -332,7 +332,7 @@ func resourceApp() *schema.Resource {
 						},
 						"staging_route": &schema.Schema{
 							Type:     schema.TypeSet,
-							Required: true,
+							Optional: true,
 							MinItems: 1,
 							Set:      hashRouteMappingSet,
 							Elem: &schema.Resource{
@@ -761,6 +761,10 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	}
 
 	if blueGreen {
+		if routes, ok := d.GetOk("routes"); !ok || routes.(*schema.Set).Len() < 1 {
+			// TODO: add test to ensure this check is done
+			return fmt.Errorf("Blue/green mode requires a 'routes' block.")
+		}
 		err = resourceAppBlueGreenUpdate(d, meta, app)
 	} else {
 		// fall back to a standard update to the existing app
@@ -808,7 +812,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 	}
 	appConfig.app.Instances = newApp.Instances // restore final expected instances count
 
-	// TODO: Execute blue-green validation
+	// TODO: Execute blue-green validation, including mapping staging route(s)!
 
 	// now that we've passed validation, we've passed the point of no return
 	d.SetId(appConfig.app.ID)
@@ -824,26 +828,11 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 	deposedResources[venerableApp.ID] = "application"
 	d.Set("deposed", deposedResources)
 
-	// Now bind the other routes to the new application instance and scale it up
-	// Bind default_route
-	if defaultRoute, err := validateRouteLegacy(appConfig.routeConfig, "default_route", venerableApp.ID, rm); err != nil {
+	// Now bind the live routes to the new application instance and scale it up
+	if mappedRoutes, err := addRouteMappings(newApp.ID, d.Get("routes").(*schema.Set).List(), venerableApp.ID, rm); err != nil {
 		return err
-	} else if len(defaultRoute) > 0 {
-		if mappingID, err := rm.CreateRouteMapping(defaultRoute, appConfig.app.ID, nil); err != nil {
-			return err
-		} else {
-			appConfig.routeConfig["default_route_mapping_id"] = mappingID
-		}
-	}
-	// Bind live_route
-	if liveRoute, err := validateRouteLegacy(appConfig.routeConfig, "live_route", venerableApp.ID, rm); err != nil {
-		return err
-	} else if len(liveRoute) > 0 {
-		if mappingID, err := rm.CreateRouteMapping(liveRoute, appConfig.app.ID, nil); err != nil {
-			return err
-		} else {
-			appConfig.routeConfig["live_route_mapping_id"] = mappingID
-		}
+	} else {
+		appConfig.routesConfig = mappedRoutes
 	}
 	d.SetPartial("route")
 
@@ -918,7 +907,16 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		}
 	}
 
-	// now delete the old application
+	// delete mappings from the venerable application
+	oldRoutes, _ := d.GetChange("routes")
+	if oldRoutesSet := oldRoutes.(*schema.Set); oldRoutesSet.Len() > 0 {
+		session.Log.DebugMessage("Deleting venerable app route mappings: %v", oldRoutesSet)
+		if err := deleteRouteMappings(oldRoutesSet.List(), rm); err != nil {
+			return err
+		}
+	}
+
+	// now delete the venerable application
 	if err := am.DeleteApp(venerableAppScale.ID, true); err != nil {
 		return err
 	} else {
@@ -1304,16 +1302,8 @@ func resourceAppDelete(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	}
 	if v, ok := d.GetOk("routes"); ok {
-		routesList := v.(*schema.Set).List()
-		for _, r := range routesList {
-			data := r.(map[string]interface{})
-			if mappingID, ok := data["mapping_id"].(string); ok && len(mappingID) > 0 {
-				if err := rm.DeleteRouteMapping(mappingID); err != nil {
-					if !strings.Contains(err.Error(), "status code: 404") {
-						return err
-					}
-				}
-			}
+		if err = deleteRouteMappings(v.(*schema.Set).List(), rm); err != nil {
+			return err
 		}
 	}
 	err = am.DeleteApp(d.Id(), false)
@@ -1474,6 +1464,20 @@ func addRouteMappings(appID string, routes []interface{}, validCurrentAppMapping
 		mappedRoutes = append(mappedRoutes, data)
 	}
 	return mappedRoutes, nil
+}
+
+func deleteRouteMappings(routes []interface{}, rm *cfapi.RouteManager) error {
+	for _, r := range routes {
+		data := r.(map[string]interface{})
+		if mappingID, ok := data["mapping_id"].(string); ok && len(mappingID) > 0 {
+			if err := rm.DeleteRouteMapping(mappingID); err != nil {
+				if !strings.Contains(err.Error(), "status code: 404") {
+					return err
+				}
+			}
+		}
+	}
+	return nil
 }
 
 func validateRouteLegacy(routeConfig map[string]interface{}, route string, appID string, rm *cfapi.RouteManager) (routeID string, err error) {
