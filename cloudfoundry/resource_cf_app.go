@@ -368,6 +368,13 @@ func resourceApp() *schema.Resource {
 							Type:     schema.TypeString,
 							Optional: true,
 						},
+						"shutdown_wait": &schema.Schema{
+							Type:         schema.TypeInt,
+							Description:  "Period (in minutes) to wait before shutting down the venerable application.",
+							Optional:     true,
+							Default:      0,
+							ValidateFunc: validation.IntBetween(0, 15),
+						},
 						"staging_route": &schema.Schema{
 							Type:     schema.TypeSet,
 							Optional: true,
@@ -899,6 +906,8 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 	am := session.AppManager()
 	rm := session.RouteManager()
 
+	blueGreenConfig := d.Get("blue_green").([]interface{})[0].(map[string]interface{})
+
 	var venerableApp cfapi.CCApp
 	if v, err := am.ReadApp(d.Id()); err != nil {
 		return err
@@ -953,6 +962,11 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		timeoutDuration = time.Second * time.Duration(vv)
 	}
 
+	shutdownWaitTime := time.Duration(0)
+	if v, ok := blueGreenConfig["shutdown_wait"]; ok {
+		shutdownWaitTime = time.Duration(v.(int)) * time.Minute
+	}
+
 	// now scale up the new app and scale down the old app
 	venerableAppScale := cfapi.CCApp{
 		ID:        venerableApp.ID,
@@ -966,7 +980,7 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 	}
 	session.Log.DebugMessage("newApp.Instances: %d", *newApp.Instances)
 	session.Log.DebugMessage("venerableApp.Instances: %d", *venerableAppScale.Instances)
-	for *newAppScale.Instances < *newApp.Instances || *venerableAppScale.Instances > 1 {
+	for *newAppScale.Instances < *newApp.Instances || (*venerableAppScale.Instances > 1 && shutdownWaitTime <= 0) {
 		if *newAppScale.Instances < *newApp.Instances {
 			// scale up new
 			*newAppScale.Instances++
@@ -992,31 +1006,35 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 			}
 		}
 
-		if *venerableAppScale.Instances > 1 {
-			// scale down old
-			*venerableAppScale.Instances--
-			session.Log.DebugMessage("Scaling down venerable app %s to instance count %d", venerableAppScale.ID, *venerableAppScale.Instances)
-			if _, err := am.UpdateApp(venerableAppScale); err != nil {
-				return err
-			}
-			if *venerableApp.State != "STOPPED" {
-				// wait for the instance to stop
-				stateConf := &resource.StateChangeConf{
-					Pending: []string{"false"},
-					Target:  []string{"true"},
-					Refresh: func() (interface{}, string, error) {
-						c, err := am.CountRunningAppInstances(venerableApp)
-						return new(interface{}), strconv.FormatBool(c <= *venerableApp.Instances), err
-					},
-					Timeout:      timeoutDuration,
-					PollInterval: 5 * time.Second,
-				}
-				if _, err := stateConf.WaitForState(); err != nil {
+		if shutdownWaitTime <= 0 {
+			if *venerableAppScale.Instances > 1 {
+				// scale down old
+				*venerableAppScale.Instances--
+				session.Log.DebugMessage("Scaling down venerable app %s to instance count %d", venerableAppScale.ID, *venerableAppScale.Instances)
+				if _, err := am.UpdateApp(venerableAppScale); err != nil {
 					return err
 				}
-				// CF gives shutting down processes at most 10 seconds to exit
-				time.Sleep(time.Second * time.Duration(10))
+				if *venerableApp.State != "STOPPED" {
+					// wait for the instance to stop
+					stateConf := &resource.StateChangeConf{
+						Pending: []string{"false"},
+						Target:  []string{"true"},
+						Refresh: func() (interface{}, string, error) {
+							c, err := am.CountRunningAppInstances(venerableApp)
+							return new(interface{}), strconv.FormatBool(c <= *venerableApp.Instances), err
+						},
+						Timeout:      timeoutDuration,
+						PollInterval: 5 * time.Second,
+					}
+					if _, err := stateConf.WaitForState(); err != nil {
+						return err
+					}
+					// CF gives shutting down processes at most 10 seconds to exit
+					time.Sleep(time.Second * time.Duration(10))
+				}
 			}
+		} else {
+			session.Log.DebugMessage("Not scaling down venerable app (%s) due to a configured shutdown_wait=%dm", venerableApp.ID, blueGreenConfig["shutdown_wait"].(int))
 		}
 	}
 
@@ -1026,6 +1044,14 @@ func resourceAppBlueGreenUpdate(d *schema.ResourceData, meta interface{}, newApp
 		session.Log.DebugMessage("Deleting venerable app route mappings: %v", oldRoutesSet)
 		if err := deleteRouteMappings(oldRoutesSet.List(), rm); err != nil {
 			return err
+		}
+	}
+
+	waitCyclePeriod := time.Second * time.Duration(10)
+	if shutdownWaitTime > 0 {
+		for waited := time.Duration(0); waited < shutdownWaitTime; waited = waited + waitCyclePeriod {
+			session.Log.DebugMessage("Waiting for venerable app (%s) shutdown_wait period to expire... (waited=%ds) (shutdown_wait=%dm)", venerableApp.ID, waited/time.Second, shutdownWaitTime/time.Minute)
+			time.Sleep(waitCyclePeriod)
 		}
 	}
 
