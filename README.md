@@ -8,9 +8,9 @@ The [upstream repository](https://github.com/mevansam/terraform-provider-cf) was
 
 Following Features/Issues have been implmented/fixed:
 
-- [Asynchronous provisioning/deprovisioning and update of cf_service_instance](https://github.com/mevansam/terraform-provider-cf/issues/51)
+- [Asynchronous provisioning/deprovisioning and update of cf_service_instance](https://github.com/mevansam/terraform-provider-cf/issues/51) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/111)
 - [Docker support](https://github.com/mevansam/terraform-provider-cf/pull/43) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/84)
-- [Application Binding to Service Instances fail](https://github.com/mevansam/terraform-provider-cf/issues/40)
+- [Application Binding to Service Instances fail](https://github.com/mevansam/terraform-provider-cf/issues/40) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/111)
 - [Deletion of Service Instances](https://github.com/mevansam/terraform-provider-cf/issues/36)
 - [Application Update fails](https://github.com/mevansam/terraform-provider-cf/issues/32)
 - [Add a blue green strategy](https://github.com/mevansam/terraform-provider-cf/issues/25)
