@@ -14,6 +14,7 @@ import (
 
 	// "github.com/hashicorp/terraform/helper/hashcode"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/helper/validation"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/repo"
 )
@@ -101,6 +102,7 @@ func resourceApp() *schema.Resource {
 				Type:          schema.TypeString,
 				Optional:      true,
 				ConflictsWith: []string{"git", "github_release"},
+				ValidateFunc:  validation.NoZeroValues,
 			},
 			"git": &schema.Schema{
 				Type:          schema.TypeList,
