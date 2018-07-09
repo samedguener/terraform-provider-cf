@@ -12,7 +12,7 @@ Following Features/Issues have been implmented/fixed:
 - [Docker support](https://github.com/mevansam/terraform-provider-cf/pull/43) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/84)
 - [Application Binding to Service Instances fail](https://github.com/mevansam/terraform-provider-cf/issues/40) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/111)
 - [Deletion of Service Instances](https://github.com/mevansam/terraform-provider-cf/issues/36)
-- [Application Update fails](https://github.com/mevansam/terraform-provider-cf/issues/32)
+- [Application Update fails](https://github.com/mevansam/terraform-provider-cf/issues/32) - [Application Binding to Service Instances fail](https://github.com/mevansam/terraform-provider-cf/issues/40) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/118)
 - [Add a blue green strategy](https://github.com/mevansam/terraform-provider-cf/issues/25)
 - [Fix unexpected EOF errors on cf_app deployment](https://github.com/chrismathias/terraform-provider-cf/pull/12)
 - [Fix error of import apps with credentials in list](https://github.com/chrismathias/terraform-provider-cf/pull/14)
