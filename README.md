@@ -21,6 +21,9 @@ Following Features/Issues have been implmented/fixed:
 
 If merged is mentioned next to the implemented feature, then it is also incorporated to the upstream version.
 
+Notable deviations in the upstream repository:
+- [cloudfoundry_ prefix is used instead of cf_](https://github.com/mevansam/terraform-provider-cf/pull/85)
+
 The branch `old-revision` contains all PRs, but with the exception that for [Asynchronous provisioning/deprovisioning and update of cf_service_instance](https://github.com/mevansam/terraform-provider-cf/issues/51) an [older approach](https://github.com/chrismathias/terraform-provider-cf/commit/2c2da73d7c785d099e9b50676762b704fb676313) is used. The older approach is discontinued, due more user experiences. The branch was kept in regard of old `.tfstate`-files. Please refer to the wiki-pages of the branches for more indetail information.
 
 Overview
