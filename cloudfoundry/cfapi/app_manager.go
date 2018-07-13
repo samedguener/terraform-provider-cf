@@ -9,6 +9,8 @@ import (
 	"path/filepath"
 	"time"
 
+	"github.com/mholt/archiver"
+
 	"code.cloudfoundry.org/cli/cf/actors"
 	"code.cloudfoundry.org/cli/cf/api"
 	"code.cloudfoundry.org/cli/cf/api/applicationbits"
@@ -78,6 +80,22 @@ type CCAppResource struct {
 	Entity   CCApp              `json:"entity"`
 }
 
+// CCSeviceBinding -
+type CCSeviceBinding struct {
+	ID string
+
+	Name            string                  `json:"name,omitempty"`
+	ServiceInstance string                  `json:"service_instance_guid,omitempty"`
+	Application     string                  `json:"app_guid,omitempty"`
+	Credentials     *map[string]interface{} `json:"credentials,omitempty"`
+}
+
+// CCSeviceBindingResource -
+type CCSeviceBindingResource struct {
+	Metadata resources.Metadata `json:"metadata"`
+	Entity   CCSeviceBinding    `json:"entity"`
+}
+
 const appStatePingSleep = time.Second * 5
 
 // newAppManager -
@@ -104,9 +122,16 @@ func newAppManager(
 }
 
 // FindApp -
-func (am *AppManager) FindApp(appName string) (app CCApp, err error) {
+func (am *AppManager) FindApp(appName string, spaceID string) (app CCApp, err error) {
 
-	path := fmt.Sprintf("/v2/apps?q=name:%s", appName)
+	var queryEndpoint string
+	if spaceID != "" {
+		queryEndpoint = fmt.Sprintf("/v2/spaces/%s/apps?q=name:%%s", spaceID)
+	} else {
+		queryEndpoint = "/v2/apps?q=name:%s"
+	}
+
+	path := fmt.Sprintf(queryEndpoint, appName)
 	if err = am.ccGateway.ListPaginatedResources(am.apiEndpoint, path, CCAppResource{},
 		func(resource interface{}) bool {
 			appResource := resource.(CCAppResource)
@@ -198,6 +223,25 @@ func (am *AppManager) DeleteApp(appID string, deleteServiceBindings bool) (err e
 
 // UploadApp -
 func (am *AppManager) UploadApp(app CCApp, path string, addContent []map[string]interface{}) (err error) {
+
+	// Handle tar and tar.gz and other archive files that aren't zip
+	if extractDir, err := ioutil.TempDir("", app.Name); err == nil {
+		defer func(dir string) { os.RemoveAll(dir) }(extractDir)
+		extractionComplete := false
+		if !extractionComplete && archiver.TarGz.Open(path, extractDir) == nil {
+			extractionComplete = true
+		}
+		if !extractionComplete && archiver.TarBz2.Open(path, extractDir) == nil {
+			extractionComplete = true
+		}
+		if !extractionComplete && archiver.Tar.Open(path, extractDir) == nil {
+			extractionComplete = true
+		}
+		if extractionComplete {
+			path = extractDir
+		}
+	}
+
 	processor := func(appDir string) error {
 		for _, c := range addContent {
 			s := c["source"].(string)
@@ -359,6 +403,32 @@ func (am *AppManager) WaitForAppToStart(app CCApp, timeout time.Duration) (err e
 	return nil
 }
 
+// ReadAppInstanceState -
+func (am *AppManager) ReadAppInstanceState(app CCApp) (map[string]interface{}, error) {
+	response := make(map[string]interface{})
+	if err := am.ccGateway.GetResource(fmt.Sprintf("%s/v2/apps/%s/instances", am.apiEndpoint, app.ID), &response); err != nil {
+		return response, err
+	}
+	return response, nil
+}
+
+// CountRunningAppInstances -
+func (am *AppManager) CountRunningAppInstances(app CCApp) (int, error) {
+	response, err := am.ReadAppInstanceState(app)
+	if err != nil {
+		return -1, err
+	}
+
+	runningCount := 0
+	for _, v := range response {
+		stateData := v.(map[string]interface{})
+		if stateData["state"].(string) == "RUNNING" {
+			runningCount++
+		}
+	}
+	return runningCount, nil
+}
+
 // RestageApp -
 func (am *AppManager) RestageApp(appID string, timeout time.Duration) (err error) {
 
@@ -390,6 +460,7 @@ func (am *AppManager) WaitForAppToStage(app CCApp, timeout time.Duration) (err e
 		var ferr error
 
 		for {
+			time.Sleep(appStatePingSleep)
 			if app, ferr = am.ReadApp(app.ID); err != nil {
 				c <- ferr
 				return
@@ -404,7 +475,6 @@ func (am *AppManager) WaitForAppToStage(app CCApp, timeout time.Duration) (err e
 					return
 				}
 			}
-			time.Sleep(appStatePingSleep)
 		}
 	}()
 
@@ -493,6 +563,18 @@ func (am *AppManager) CreateServiceBinding(
 		credentials = v.(map[string]interface{})
 	}
 	return bindingID, credentials, nil
+}
+
+// ReadServiceBinding -
+func (am *AppManager) ReadServiceBinding(bindingID string) (serviceBinding CCSeviceBinding, err error) {
+	resource := CCSeviceBindingResource{}
+	if err = am.ccGateway.GetResource(fmt.Sprintf("%s/v2/service_bindings/%s", am.apiEndpoint, bindingID), &resource); err != nil {
+		return serviceBinding, err
+	}
+
+	serviceBinding = resource.Entity
+	serviceBinding.ID = resource.Metadata.GUID
+	return serviceBinding, nil
 }
 
 // ReadServiceBindingsByApp -
