@@ -728,6 +728,42 @@
 			"revisionTime": "2017-07-07T09:23:07Z"
 		},
 		{
+			"checksumSHA1": "OMmQCoESeAdLaK+bR16GDLLYKhQ=",
+			"path": "github.com/dsnet/compress",
+			"revision": "cc9eb1d7ad760af14e8f918698f745e80377af4f",
+			"revisionTime": "2017-12-08T18:51:09Z"
+		},
+		{
+			"checksumSHA1": "zE3PI7MIbKB1XRWvQfU2g0+QgWU=",
+			"path": "github.com/dsnet/compress/bzip2",
+			"revision": "cc9eb1d7ad760af14e8f918698f745e80377af4f",
+			"revisionTime": "2017-12-08T18:51:09Z"
+		},
+		{
+			"checksumSHA1": "/5fCary0ezTFAHA/vxtBGIaax6M=",
+			"path": "github.com/dsnet/compress/bzip2/internal/sais",
+			"revision": "cc9eb1d7ad760af14e8f918698f745e80377af4f",
+			"revisionTime": "2017-12-08T18:51:09Z"
+		},
+		{
+			"checksumSHA1": "e6WElyzZWp/36+isrK8rMioOvCs=",
+			"path": "github.com/dsnet/compress/internal",
+			"revision": "cc9eb1d7ad760af14e8f918698f745e80377af4f",
+			"revisionTime": "2017-12-08T18:51:09Z"
+		},
+		{
+			"checksumSHA1": "Z38Kis+q8u8jngKrJkPeCoE7sK4=",
+			"path": "github.com/dsnet/compress/internal/errors",
+			"revision": "cc9eb1d7ad760af14e8f918698f745e80377af4f",
+			"revisionTime": "2017-12-08T18:51:09Z"
+		},
+		{
+			"checksumSHA1": "kj/G1EsV614nW7aGEEwnlag2lwM=",
+			"path": "github.com/dsnet/compress/internal/prefix",
+			"revision": "cc9eb1d7ad760af14e8f918698f745e80377af4f",
+			"revisionTime": "2017-12-08T18:51:09Z"
+		},
+		{
 			"checksumSHA1": "AANTVr9CVVyzsgviODY6Wi2thuM=",
 			"path": "github.com/fatih/color",
 			"revision": "62e9147c64a1ed519147b62a56a14e83e2be02c1",
@@ -787,6 +823,12 @@
 			"path": "github.com/golang/protobuf/ptypes/timestamp",
 			"revision": "1e59b77b52bf8e4b449a57e6f79f21226d571845",
 			"revisionTime": "2017-11-13T18:07:20Z"
+		},
+		{
+			"checksumSHA1": "OV+/R43DDDJ/Gxrx9oQob/K7sL0=",
+			"path": "github.com/golang/snappy",
+			"revision": "553a641470496b2327abcac10b36396bd98e45c9",
+			"revisionTime": "2017-02-15T23:32:05Z"
 		},
 		{
 			"checksumSHA1": "uhwIom3PCgQdZGs965I8PSp4+Xw=",
@@ -1083,6 +1125,12 @@
 			"revisionTime": "2018-01-11T18:50:06Z"
 		},
 		{
+			"checksumSHA1": "X0wSca2bKWRpjSBC6mPFSR1mvJc=",
+			"path": "github.com/hashicorp/terraform/helper/validation",
+			"revision": "664391c254eaa867f2c653d5bb5c54cec1785609",
+			"revisionTime": "2018-03-02T17:16:01Z"
+		},
+		{
 			"checksumSHA1": "yFWmdS6yEJZpRJzUqd/mULqCYGk=",
 			"path": "github.com/hashicorp/terraform/moduledeps",
 			"revision": "a6008b8a48a749c7c167453b9cf55ffd572b9a5d",
@@ -1205,6 +1253,12 @@
 			"revisionTime": "2017-05-10T07:48:58Z"
 		},
 		{
+			"checksumSHA1": "eSZkVn8RL79pF5FJJ6sxK+9OUZk=",
+			"path": "github.com/mholt/archiver",
+			"revision": "e4ef56d48eb029648b0e895bb0b6a393ef0829c3",
+			"revisionTime": "2018-04-17T22:02:35Z"
+		},
+		{
 			"checksumSHA1": "GTwA+0jQnOqTHsVaBIMvTKaE5eI=",
 			"path": "github.com/mitchellh/cli",
 			"revision": "518dc677a1e1222682f4e7db06721942cb8e9e4c",
@@ -1257,6 +1311,25 @@
 			"path": "github.com/mitchellh/reflectwalk",
 			"revision": "a6008b8a48a749c7c167453b9cf55ffd572b9a5d",
 			"revisionTime": "2018-01-09T23:13:33Z"
+		},
+		{
+			"checksumSHA1": "VrKBxlmITd2FXb4ZH1qgJ7CifZU=",
+			"path": "github.com/nwaples/rardecode",
+			"revision": "e06696f847aeda6f39a8f0b7cdff193b7690aef6",
+			"revisionTime": "2017-03-13T01:07:58Z"
+		},
+		{
+			"checksumSHA1": "8cWmad2kkSHyW37Hbu901rLrAFo=",
+			"path": "github.com/pierrec/lz4",
+			"revision": "ed8d4cc3b461464e69798080a0092bd028910298",
+			"revisionTime": "2018-01-13T15:17:03Z"
+		},
+		{
+			"checksumSHA1": "ieRRw3MpbPjA3z2MJVHDsC9jkjc=",
+			"origin": "github.com/pierrec/lz4/vendor/github.com/pierrec/xxHash/xxHash32",
+			"path": "github.com/pierrec/xxHash/xxHash32",
+			"revision": "ed8d4cc3b461464e69798080a0092bd028910298",
+			"revisionTime": "2018-01-13T15:17:03Z"
 		},
 		{
 			"checksumSHA1": "gPjJZtNghEv8qmiRMImFpU3m228=",
@@ -1597,6 +1670,12 @@
 			"path": "golang.org/x/oauth2/internal",
 			"revision": "cce311a261e6fcf29de72ca96827bdb0b7d9c9e6",
 			"revisionTime": "2017-06-29T19:00:38Z"
+		},
+		{
+			"checksumSHA1": "vcN67ZjTbGpLLwSghHCbAEvmzMo=",
+			"path": "golang.org/x/sync/semaphore",
+			"revision": "1d60e4601c6fd243af51cc01ddf169918a5407ca",
+			"revisionTime": "2018-03-14T17:21:19Z"
 		},
 		{
 			"checksumSHA1": "2ncnCWXu6MhDubZJYmyFNBYsrXE=",

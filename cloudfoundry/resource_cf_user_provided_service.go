@@ -54,11 +54,13 @@ func resourceUserProvidedService() *schema.Resource {
 			"credentials": &schema.Schema{
 				Type:          schema.TypeMap,
 				Optional:      true,
+				Sensitive:     true,
 				ConflictsWith: []string{"credentials_json"},
 			},
 			"credentials_json": &schema.Schema{
 				Type:             schema.TypeString,
 				Optional:         true,
+				Sensitive:        true,
 				ConflictsWith:    []string{"credentials"},
 				DiffSuppressFunc: structure.SuppressJsonDiff,
 			},
