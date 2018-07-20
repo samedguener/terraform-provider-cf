@@ -279,13 +279,6 @@ func resourceApp() *schema.Resource {
 							Type:     schema.TypeString,
 							Computed: true,
 						},
-						"exclusive": &schema.Schema{
-							Type:        schema.TypeBool,
-							Description: "Should terraform remove all mappings of this route not declared here?",
-							Deprecated:  "Not yet implemented!",
-							Optional:    true,
-							Default:     true,
-						},
 					},
 				},
 			},
@@ -635,90 +628,80 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 		}
 	} else {
 		setAppArguments(app, d)
-	}
 
-	var serviceBindings []map[string]interface{}
-	if serviceBindings, err = am.ReadServiceBindingsByApp(app.ID); err != nil {
-		return
-	}
-	var newStateServiceBindings []map[string]interface{}
-	for _, binding := range serviceBindings {
-		stateBindingData := make(map[string]interface{})
-		stateBindingData["service_instance"] = binding["service_instance"].(string)
-		stateBindingData["binding_id"] = binding["binding_id"].(string)
-		credentials := binding["credentials"].(map[string]interface{})
-		for k, v := range normalizeMap(credentials, make(map[string]interface{}), "", "_") {
-			credentials[k] = fmt.Sprintf("%v", v)
-		}
-		stateBindingData["credentials"] = credentials
-		newStateServiceBindings = append(newStateServiceBindings, stateBindingData)
-	}
-	if len(newStateServiceBindings) > 0 {
-		if err := d.Set("service_binding", newStateServiceBindings); err != nil {
-			log.Printf("[WARN] Error setting service_binding to cf_app (%s): %s", d.Id(), err)
-		}
-	}
-
-	if _, hasOldRoute := d.GetOk("route"); hasOldRoute {
-		var routeMappings []map[string]interface{}
-		if routeMappings, err = rm.ReadRouteMappingsByApp(app.ID); err != nil {
+		var serviceBindings []map[string]interface{}
+		if serviceBindings, err = am.ReadServiceBindingsByApp(app.ID); err != nil {
 			return
 		}
-		var stateRouteList = d.Get("route").([]interface{})
-		var stateRouteMappings map[string]interface{}
-		if len(stateRouteList) == 1 && stateRouteList[0] != nil {
-			stateRouteMappings = stateRouteList[0].(map[string]interface{})
-		} else {
-			stateRouteMappings = make(map[string]interface{})
+		var newStateServiceBindings []map[string]interface{}
+		for _, binding := range serviceBindings {
+			stateBindingData := make(map[string]interface{})
+			stateBindingData["service_instance"] = binding["service_instance"].(string)
+			stateBindingData["binding_id"] = binding["binding_id"].(string)
+			credentials := binding["credentials"].(map[string]interface{})
+			for k, v := range normalizeMap(credentials, make(map[string]interface{}), "", "_") {
+				credentials[k] = fmt.Sprintf("%v", v)
+			}
+			stateBindingData["credentials"] = credentials
+			newStateServiceBindings = append(newStateServiceBindings, stateBindingData)
 		}
-		currentRouteMappings := make(map[string]interface{})
-		for _, r := range []string{
-			"default_route",
-			"stage_route",
-			"live_route",
-		} {
-			currentRouteMappings[r] = ""
-			currentRouteMappings[r+"_mapping_id"] = ""
-			for _, mapping := range routeMappings {
-				var mappingID, route = mapping["mapping_id"], mapping["route"]
-				if route == stateRouteMappings[r] {
-					currentRouteMappings[r+"_mapping_id"] = mappingID
-					currentRouteMappings[r] = route
-					break
-				}
+		if len(newStateServiceBindings) > 0 {
+			if err := d.Set("service_binding", newStateServiceBindings); err != nil {
+				log.Printf("[WARN] Error setting service_binding to cf_app (%s): %s", d.Id(), err)
 			}
 		}
-		d.Set("route", [...]interface{}{currentRouteMappings})
-	} else if routeState, hasNewRoutes := d.GetOk("routes"); hasNewRoutes {
-		routesList := routeState.(*schema.Set).List()
-		var updatedRoutes []interface{}
-		for _, r := range routesList {
-			stateData := r.(map[string]interface{})
-			if mappingID, ok := stateData["mapping_id"].(string); ok && len(mappingID) > 0 {
-				if mapping, err := rm.ReadRouteMapping(mappingID); err != nil {
-					return err
-				} else {
-					if mapping.AppID != appID {
-						// this should never happen!
-						return fmt.Errorf("route mapping %s does not point to the current app (%s)", mappingID, appID)
+
+		if _, hasOldRoute := d.GetOk("route"); hasOldRoute {
+			var routeMappings []map[string]interface{}
+			if routeMappings, err = rm.ReadRouteMappingsByApp(app.ID); err != nil {
+				return
+			}
+			var stateRouteList = d.Get("route").([]interface{})
+			var stateRouteMappings map[string]interface{}
+			if len(stateRouteList) == 1 && stateRouteList[0] != nil {
+				stateRouteMappings = stateRouteList[0].(map[string]interface{})
+			} else {
+				stateRouteMappings = make(map[string]interface{})
+			}
+			currentRouteMappings := make(map[string]interface{})
+			for _, r := range []string{
+				"default_route",
+				"stage_route",
+				"live_route",
+			} {
+				currentRouteMappings[r] = ""
+				currentRouteMappings[r+"_mapping_id"] = ""
+				for _, mapping := range routeMappings {
+					var mappingID, route = mapping["mapping_id"], mapping["route"]
+					if route == stateRouteMappings[r] {
+						currentRouteMappings[r+"_mapping_id"] = mappingID
+						currentRouteMappings[r] = route
+						break
 					}
+				}
+			}
+			d.Set("route", [...]interface{}{currentRouteMappings})
+		} else if srd, hasNewRoutes := d.GetOk("routes"); hasNewRoutes {
+			stateRoutes := srd.(*schema.Set)
+			if currentRouteMappings, err := rm.ReadRouteMappingsByApp(app.ID); err != nil {
+				return err
+			} else {
+				var updatedRoutes []interface{}
+				for _, mapping := range currentRouteMappings {
+
 					refreshedData := map[string]interface{}{
-						"mapping_id": mapping.ID,
-						"port":       mapping.AppPort,
-						"route":      mapping.RouteID,
+						"mapping_id": mapping["mapping_id"].(string),
+						"port":       mapping["port"].(int),
+						"route":      mapping["route"].(string),
 					}
-					if stateRouteID, ok := stateData["route"].(string); ok && len(stateRouteID) > 0 {
-						refreshedData["exclusive"] = stateData["exclusive"]
+					if stateRoutes.Contains(refreshedData) {
+						updatedRoutes = append(updatedRoutes, refreshedData)
 					}
-					updatedRoutes = append(updatedRoutes, refreshedData)
 				}
-			} else if routeID, ok := stateData["route"].(string); ok && len(routeID) > 0 {
-				// route listed in state, but with no mappingID?!?
-				// this means we need to recreate it so we'll exclude it from the refreshed state
+				if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, updatedRoutes)); err != nil {
+					return err
+				}
 			}
-		}
-		if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, updatedRoutes)); err != nil {
-			return err
 		}
 	}
 
