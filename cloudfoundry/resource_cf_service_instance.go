@@ -1,11 +1,12 @@
 package cloudfoundry
 
 import (
+	"encoding/json"
 	"fmt"
 
-	"encoding/json"
-
+	"github.com/hashicorp/terraform/helper/customdiff"
 	"github.com/hashicorp/terraform/helper/schema"
+	"github.com/hashicorp/terraform/helper/validation"
 	"github.com/terraform-providers/terraform-provider-cf/cloudfoundry/cfapi"
 )
 
@@ -22,6 +23,10 @@ func resourceServiceInstance() *schema.Resource {
 			State: ImportStatePassthrough,
 		},
 
+		CustomizeDiff: customdiff.All(
+			resourceServiceInstanceValidateDiff,
+		),
+
 		Schema: map[string]*schema.Schema{
 
 			"name": &schema.Schema{
@@ -37,9 +42,17 @@ func resourceServiceInstance() *schema.Resource {
 				Required: true,
 			},
 			"json_params": &schema.Schema{
-				Type:     schema.TypeString,
-				Optional: true,
-				Default:  "",
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "",
+				ValidateFunc: validation.ValidateJsonString,
+			},
+			"json_params_sensitive": &schema.Schema{
+				Type:         schema.TypeString,
+				Optional:     true,
+				Default:      "",
+				Sensitive:    true,
+				ValidateFunc: validation.ValidateJsonString,
 			},
 			"tags": &schema.Schema{
 				Type:     schema.TypeList,
@@ -48,6 +61,49 @@ func resourceServiceInstance() *schema.Resource {
 			},
 		},
 	}
+}
+
+func resourceServiceInstanceValidateDiff(d *schema.ResourceDiff, meta interface{}) error {
+	jsonParametersString, hasJson := d.GetOk("json_params")
+	jsonParametersSensitiveString, hasJsonSensitive := d.GetOk("json_params_sensitive")
+	if hasJson && hasJsonSensitive {
+		var jsonParams map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonParametersString.(string)), &jsonParams); err != nil {
+			return err
+		}
+		var jsonParamsSensitive map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonParametersSensitiveString.(string)), &jsonParamsSensitive); err != nil {
+			return err
+		}
+		for k := range jsonParams {
+			if _, hasKey := jsonParamsSensitive[k]; hasKey {
+				return fmt.Errorf("json_params and json_params_sensitive contain overlapping top level keys (%s)", k)
+			}
+		}
+	}
+	return nil
+}
+
+func resourceServiceInstanceProcessJsonParams(d *schema.ResourceData) (map[string]interface{}, error) {
+	var params map[string]interface{}
+
+	if jsonParameters := d.Get("json_params").(string); len(jsonParameters) > 0 {
+		if err := json.Unmarshal([]byte(jsonParameters), &params); err != nil {
+			return params, err
+		}
+	}
+
+	if jsonParameters := d.Get("json_params_sensitive").(string); len(jsonParameters) > 0 {
+		var additionalParams map[string]interface{}
+		if err := json.Unmarshal([]byte(jsonParameters), &params); err != nil {
+			return params, err
+		}
+		for k, v := range additionalParams {
+			params[k] = v
+		}
+	}
+
+	return params, nil
 }
 
 func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (err error) {
@@ -65,16 +121,14 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 	name := d.Get("name").(string)
 	servicePlan := d.Get("service_plan").(string)
 	space := d.Get("space").(string)
-	jsonParameters := d.Get("json_params").(string)
+
+	params, err = resourceServiceInstanceProcessJsonParams(d)
+	if err != nil {
+		return err
+	}
 
 	for _, v := range d.Get("tags").([]interface{}) {
 		tags = append(tags, v.(string))
-	}
-
-	if len(jsonParameters) > 0 {
-		if err = json.Unmarshal([]byte(jsonParameters), &params); err != nil {
-			return err
-		}
 	}
 
 	sm := session.ServiceManager()
@@ -145,12 +199,10 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 	id = d.Id()
 	name = d.Get("name").(string)
 	servicePlan := d.Get("service_plan").(string)
-	jsonParameters := d.Get("json_params").(string)
 
-	if len(jsonParameters) > 0 {
-		if err = json.Unmarshal([]byte(jsonParameters), &params); err != nil {
-			return err
-		}
+	params, err = resourceServiceInstanceProcessJsonParams(d)
+	if err != nil {
+		return err
 	}
 
 	for _, v := range d.Get("tags").([]interface{}) {
