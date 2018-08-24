@@ -2,6 +2,7 @@ package cloudfoundry
 
 import (
 	"fmt"
+	"regexp"
 	"testing"
 
 	"code.cloudfoundry.org/cli/cf/errors"
@@ -224,6 +225,90 @@ func TestAccServiceBroker_async(t *testing.T) {
 						testAccCheckServiceInstanceExists(refAsync),
 						resource.TestCheckResourceAttr(refAsync, "name", "fake-service"),
 					),
+				},
+			},
+		})
+}
+
+func TestAccServiceInstance_overlappingParamsFail(t *testing.T) {
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:  func() { testAccPreCheck(t) },
+			Providers: testAccProviders,
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					PlanOnly:    true,
+					ExpectError: regexp.MustCompile("json_params and json_params_sensitive contain overlapping top level keys \\(test\\)"),
+					Config: `
+						resource "cf_service_instance" "overlappingParams" {
+							name = "overlappingParams"
+							service_plan = "00000000-0000-0000-0000-000000000000"
+							space = "00000000-0000-0000-0000-000000000000"
+							json_params = "{ \"test\": \"test value\" }"
+							json_params_sensitive = "{ \"test\": \"other test value\" }"
+						}
+					`,
+				},
+			},
+		})
+}
+
+func TestAccServiceInstance_nonOverlappingParamsPlan(t *testing.T) {
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:  func() { testAccPreCheck(t) },
+			Providers: testAccProviders,
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					PlanOnly:           true,
+					ExpectNonEmptyPlan: true,
+					Config: `
+						resource "cf_service_instance" "dualJsonParams" {
+							name = "dualJsonParams"
+							service_plan = "00000000-0000-0000-0000-000000000000"
+							space = "00000000-0000-0000-0000-000000000000"
+							json_params = "{ \"test\": \"test value\" }"
+							json_params_sensitive = "{ \"test2\": \"other test value\" }"
+						}
+					`,
+				},
+			},
+		})
+}
+
+func TestServiceInstance_badJson(t *testing.T) {
+	resource.Test(t,
+		resource.TestCase{
+			IsUnitTest: true,
+			PreCheck:   func() { testAccPreCheck(t) },
+			Providers:  testAccProviders,
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					PlanOnly:    true,
+					ExpectError: regexp.MustCompile("cf_service_instance.json_params: \"json_params\" contains an invalid JSON: "),
+					Config: `
+						resource "cf_service_instance" "json_params" {
+							name = "test"
+							service_plan = "00000000-0000-0000-0000-000000000000"
+							space = "00000000-0000-0000-0000-000000000000"
+							json_params = "{ \"test\": \"test value\", }"
+						}
+					`,
+				},
+				resource.TestStep{
+					PlanOnly:    true,
+					ExpectError: regexp.MustCompile("cf_service_instance.json_params_sensitive: \"json_params_sensitive\" contains an invalid JSON: "),
+					Config: `
+						resource "cf_service_instance" "json_params_sensitive" {
+							name = "test"
+							service_plan = "00000000-0000-0000-0000-000000000000"
+							space = "00000000-0000-0000-0000-000000000000"
+							json_params_sensitive = "{ \"test\": \"test value\", }"
+						}
+					`,
 				},
 			},
 		})
