@@ -1,8 +1,14 @@
 package cloudfoundry
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
+	"strings"
+	"sync"
+	"time"
+
+	"golang.org/x/sync/semaphore"
 
 	"github.com/hashicorp/terraform/helper/customdiff"
 	"github.com/hashicorp/terraform/helper/schema"
@@ -23,10 +29,17 @@ func resourceServiceInstance() *schema.Resource {
 			State: ImportStatePassthrough,
 		},
 
+		Timeouts: &schema.ResourceTimeout{
+			Create: schema.DefaultTimeout(15 * time.Minute),
+			Update: schema.DefaultTimeout(15 * time.Minute),
+			Delete: schema.DefaultTimeout(15 * time.Minute),
+		},
+
 		CustomizeDiff: customdiff.All(
 			resourceServiceInstanceValidateDiff,
 		),
 
+		SchemaVersion: 1,
 		Schema: map[string]*schema.Schema{
 
 			"name": &schema.Schema{
@@ -58,6 +71,11 @@ func resourceServiceInstance() *schema.Resource {
 				Type:     schema.TypeList,
 				Optional: true,
 				Elem:     &schema.Schema{Type: schema.TypeString},
+			},
+			"service_plan_concurrency": &schema.Schema{
+				Type:        schema.TypeInt,
+				Optional:    true,
+				Description: "Allows for the concurrency of changes to service instances, sharing a particular service_plan, to be restricted.",
 			},
 		},
 	}
@@ -133,12 +151,20 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 
 	sm := session.ServiceManager()
 
+	if sem := limitConcurrency(d); sem != nil {
+		defer (*sem).Release(1)
+	}
+
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
 		return err
 	}
-	session.Log.DebugMessage("New Service Instance : %# v", id)
 
-	// TODO deal with asynchronous responses
+	// Check whetever service_instance exists and is in state 'succeeded'
+	if err = sm.WaitServiceInstanceTo("create", id); err != nil {
+		return err
+	}
+
+	session.Log.DebugMessage("New Service Instance : %# v", id)
 
 	d.SetId(id)
 
@@ -158,6 +184,10 @@ func resourceServiceInstanceRead(d *schema.ResourceData, meta interface{}) (err 
 
 	serviceInstance, err = sm.ReadServiceInstance(d.Id())
 	if err != nil {
+		if strings.Contains(err.Error(), "status code: 404") {
+			d.SetId("")
+			err = nil
+		}
 		return err
 	}
 
@@ -190,6 +220,13 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 
 	session.Log.DebugMessage("begin resourceServiceInstanceUpdate")
 
+	// Enable partial state mode
+	// We need to explicitly set state updates ourselves or
+	// tell terraform when a state change is applied and thus okay to persist
+	// In particular this is necessary for params since we cannot query CF for
+	// the current value of this field
+	d.Partial(true)
+
 	var (
 		id, name string
 		tags     []string
@@ -209,13 +246,33 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 		tags = append(tags, v.(string))
 	}
 
-	_, err = sm.UpdateServiceInstance(id, name, servicePlan, params, tags)
-	return err
+	if sem := limitConcurrency(d); sem != nil {
+		defer (*sem).Release(1)
+	}
+
+	if _, err = sm.UpdateServiceInstance(id, name, servicePlan, params, tags); err != nil {
+		return err
+	}
+
+	if err != nil {
+		return err
+	}
+
+	// Check whetever service_instance exists and is in state 'succeeded'
+	if err = sm.WaitServiceInstanceTo("update", id); err != nil {
+		return err
+	}
+
+	// We succeeded, disable partial mode
+	d.Partial(false)
+	return nil
 }
 
 func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (err error) {
 
 	session := meta.(*cfapi.Session)
+	id := d.Id()
+
 	if session == nil {
 		return fmt.Errorf("client is nil")
 	}
@@ -223,12 +280,82 @@ func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (er
 
 	sm := session.ServiceManager()
 
-	err = sm.DeleteServiceInstance(d.Id())
-	if err != nil {
+	if sem := limitConcurrency(d); sem != nil {
+		defer (*sem).Release(1)
+	}
+
+	if err = sm.DeleteServiceInstance(id); err != nil {
+		return err
+	}
+
+	// Check whether service_instance has been indeed deleted (sometimes takes very long))
+	if err = sm.WaitDeletionServiceInstance(id); err != nil {
 		return err
 	}
 
 	session.Log.DebugMessage("Deleted Service Instance : %s", d.Id())
 
 	return nil
+}
+
+func resourceServiceInstanceImport(d *schema.ResourceData, meta interface{}) ([]*schema.ResourceData, error) {
+	session := meta.(*cfapi.Session)
+
+	if session == nil {
+		return nil, fmt.Errorf("client is nil")
+	}
+
+	sm := session.ServiceManager()
+
+	serviceinstance, err := sm.ReadServiceInstance(d.Id())
+
+	if err != nil {
+		return nil, err
+	}
+
+	d.Set("name", serviceinstance.Name)
+	d.Set("service_plan", serviceinstance.ServicePlanGUID)
+	d.Set("space", serviceinstance.SpaceGUID)
+	d.Set("tags", serviceinstance.Tags)
+
+	// json_param can't be retrieved from CF, please inject manually if necessary
+	d.Set("json_param", "")
+
+	return []*schema.ResourceData{d}, nil
+}
+
+// #######################
+// # Concurrency Limiter #
+// #######################
+// Updates to some types of services in Cloud Foundry (generally badly behaved service brokers)
+// cannot be done in parallel or need to be done with limited concurrency.  This is a hack around
+// the lack of a terraform provided method to limit the level of concurrency around a particular
+// type of resource.  The idea here is that for all of the cf_service_instance resources
+// which share a service_plan ID and set the service_plan_concurrency to a value greater than
+// zero, then this code will cause all creates/updates/deletes of those service plan instances
+// to be throttled to the defined concurrency limit.
+//
+// Limitations
+// - The concurrency defined by the first resource to use a given service_plan ID wins
+// - cf_service_instance resources of the same service plan which do not define service_plan_concurrency
+//   will not take part in the limitation on concurrency
+
+var concurrencySemaphore = make(map[string]*semaphore.Weighted)
+var concurrencySemaphoreMutex = &sync.Mutex{}
+
+func limitConcurrency(d *schema.ResourceData) *semaphore.Weighted {
+	if d.Get("service_plan_concurrency").(int) <= 0 {
+		// if no limit, then just skip
+		return nil
+	}
+
+	concurrencySemaphoreMutex.Lock()
+	if _, ok := concurrencySemaphore[d.Get("service_plan").(string)]; !ok {
+		concurrencySemaphore[d.Get("service_plan").(string)] = semaphore.NewWeighted(int64(d.Get("service_plan_concurrency").(int)))
+	}
+	sem := concurrencySemaphore[d.Get("service_plan").(string)]
+	concurrencySemaphoreMutex.Unlock()
+
+	sem.Acquire(context.TODO(), 1)
+	return sem
 }
