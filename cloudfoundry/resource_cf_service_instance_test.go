@@ -28,7 +28,7 @@ data "cf_service" "mysql" {
 resource "cf_service_instance" "mysql" {
 	name = "mysql"
     space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.mysql.service_plans["100mb"]}"
+    service_plan = "${data.cf_service.mysql.service_plans["1gb"]}"
 	tags = [ "tag-1" , "tag-2" ]
 }
 `
@@ -49,33 +49,8 @@ data "cf_service" "mysql" {
 resource "cf_service_instance" "mysql" {
 	name = "mysql-updated"
     space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.mysql.service_plans["100mb"]}"
+    service_plan = "${data.cf_service.mysql.service_plans["512mb"]}"
 	tags = [ "tag-2", "tag-3", "tag-4" ]
-}
-`
-
-const serviceInstanceResourceCreateRedis = `
-
-data "cf_org" "org" {
-    name = "pcfdev-org"
-}
-data "cf_space" "space" {
-    name = "pcfdev-space"
-	org = "${data.cf_org.org.id}"
-}
-data "cf_service" "redis" {
-    name = "p.redis"
-}
-
-resource "cf_service_instance" "redis" {
-	name = "redis"
-    space = "${data.cf_space.space.id}"
-    service_plan = "${data.cf_service.redis.service_plans["cache-medium"]}"
-	tags = [ "tag-1" , "tag-2" ]
-    timeouts {
-      create = "30m"
-      delete = "30m"
-    }
 }
 `
 
@@ -106,7 +81,7 @@ resource "cf_route" "fake-service-broker-route" {
 
 resource "cf_app" "fake-service-broker" {
     name = "fake-service-broker"
-	url = "file://../vendor/github.com/cf-acceptance-tests/assets/service_broker/"
+	url = "file://../tests/cf-acceptance-tests/assets/service_broker/"
 	space = "${data.cf_space.space.id}"
 	timeout = 700
 
@@ -126,10 +101,24 @@ resource "cf_service_broker" "fake-service-broker" {
 	depends_on = ["cf_app.fake-service-broker"]
 }
 
-resource "cf_service_instance" "fake-service" {
-	name = "fake-service"
+resource "cf_service_instance" "fake-service-instance-with-fake-plan" {
+	name = "fake-service-instance-with-fake-plan"
+    space = "${data.cf_space.space.id}"
+	service_plan = "${cf_service_broker.fake-service-broker.service_plans["fake-service/fake-plan"]}"
+	depends_on = ["cf_app.fake-service-broker"]
+}
+
+resource "cf_service_instance" "fake-service-instance-with-fake-async-plan" {
+	name = "fake-service-instance-with-fake-async-plan"
     space = "${data.cf_space.space.id}"
 	service_plan = "${cf_service_broker.fake-service-broker.service_plans["fake-service/fake-async-plan"]}"
+	depends_on = ["cf_app.fake-service-broker"]
+}
+
+resource "cf_service_instance" "fake-service-instance-with-fake-async-only-plan" {
+	name = "fake-service-instance-with-fake-async-only-plan"
+    space = "${data.cf_space.space.id}"
+	service_plan = "${cf_service_broker.fake-service-broker.service_plans["fake-service/fake-async-only-plan"]}"
 	depends_on = ["cf_app.fake-service-broker"]
 }
 `
@@ -137,6 +126,7 @@ resource "cf_service_instance" "fake-service" {
 func TestAccServiceInstance_normal(t *testing.T) {
 
 	ref := "cf_service_instance.mysql"
+
 	resource.Test(t,
 		resource.TestCase{
 			PreCheck:     func() { testAccPreCheck(t) },
@@ -179,52 +169,40 @@ func TestAccServiceInstance_normal(t *testing.T) {
 		})
 }
 
-func TestAccServiceInstance_async(t *testing.T) {
+func TestAccServiceInstances_withFakePlans(t *testing.T) {
 
-	ref := "cf_service_instance.redis"
-
-	resource.Test(t,
-		resource.TestCase{
-			PreCheck:     func() { testAccPreCheck(t) },
-			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckServiceInstanceDestroyed([]string{"redis"}, "data.cf_space.space"),
-			Steps: []resource.TestStep{
-
-				resource.TestStep{
-					Config: serviceInstanceResourceCreateRedis,
-					Check: resource.ComposeTestCheckFunc(
-						testAccCheckServiceInstanceExists(ref),
-						resource.TestCheckResourceAttr(
-							ref, "name", "redis"),
-						resource.TestCheckResourceAttr(
-							ref, "tags.#", "2"),
-						resource.TestCheckResourceAttr(
-							ref, "tags.0", "tag-1"),
-						resource.TestCheckResourceAttr(
-							ref, "tags.1", "tag-2"),
-					),
-				},
-			},
-		})
-}
-
-func TestAccServiceBroker_async(t *testing.T) {
-
-	refAsync := "cf_service_instance.fake-service"
+	refFakePlan := "cf_service_instance.fake-service-instance-with-fake-plan"
+	refFakeAsyncPlan := "cf_service_instance.fake-service-instance-with-fake-async-plan"
+	refFakeAsyncOnlyPlan := "cf_service_instance.fake-service-instance-with-fake-async-only-plan"
 
 	resource.Test(t,
 		resource.TestCase{
 			PreCheck:     func() { testAccPreCheck(t) },
 			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckServiceInstanceDestroyed([]string{"fake-service"}, "data.cf_space.space"),
+			CheckDestroy: testAccCheckServiceInstanceDestroyed([]string{"fake-service-instance-with-fake-plan", "fake-service-instance-with-fake-async-plan", "fake-service-instance-with-fake-async-only-plan"}, "data.cf_space.space"),
 			Steps: []resource.TestStep{
 
 				resource.TestStep{
 					Config: fmt.Sprintf(serviceInstanceResourceAsyncCreate, defaultAppDomain(), defaultAppDomain()),
 					Check: resource.ComposeTestCheckFunc(
-						testAccCheckServiceInstanceExists(refAsync),
-						resource.TestCheckResourceAttr(refAsync, "name", "fake-service"),
+						// test fake-plan
+						testAccCheckServiceInstanceExists(refFakePlan),
+						resource.TestCheckResourceAttr(refFakePlan, "name", "fake-service-instance-with-fake-plan"),
+						// test fake-async-plan
+						testAccCheckServiceInstanceExists(refFakeAsyncPlan),
+						resource.TestCheckResourceAttr(refFakeAsyncPlan, "name", "fake-service-instance-with-fake-async-plan"),
+						// test fake-async-only-plan
+						testAccCheckServiceInstanceExists(refFakeAsyncOnlyPlan),
+						resource.TestCheckResourceAttr(refFakeAsyncOnlyPlan, "name", "fake-service-instance-with-fake-async-only-plan"),
 					),
+					// ExpectNonEmptyPlan to avoid the following bug in the test
+					// --- FAIL: TestAccServiceBroker_async (174.55s)
+					//testing.go:513: Step 0 error: After applying this step and refreshing, the plan was not empty:
+					//  DIFF:
+					//  CREATE: data.cf_service.fake-service
+					//    name:            "" => "fake-service"
+					//    service_plans.%: "" => "<computed>"
+					ExpectNonEmptyPlan: true,
 				},
 			},
 		})

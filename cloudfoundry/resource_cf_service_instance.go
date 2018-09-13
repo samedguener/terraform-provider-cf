@@ -10,6 +10,7 @@ import (
 
 	"golang.org/x/sync/semaphore"
 
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/customdiff"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/validation"
@@ -26,7 +27,7 @@ func resourceServiceInstance() *schema.Resource {
 		Delete: resourceServiceInstanceDelete,
 
 		Importer: &schema.ResourceImporter{
-			State: ImportStatePassthrough,
+			State: resourceServiceInstanceImport,
 		},
 
 		Timeouts: &schema.ResourceTimeout{
@@ -158,9 +159,17 @@ func resourceServiceInstanceCreate(d *schema.ResourceData, meta interface{}) (er
 	if id, err = sm.CreateServiceInstance(name, servicePlan, space, params, tags); err != nil {
 		return err
 	}
+	stateConf := &resource.StateChangeConf{
+		Pending:      resourceServiceInstancePendingStates,
+		Target:       resourceServiceInstanceSucceesStates,
+		Refresh:      resourceServiceInstanceStateFunc(id, "create", meta),
+		Timeout:      d.Timeout(schema.TimeoutCreate),
+		PollInterval: 30 * time.Second,
+		Delay:        5 * time.Second,
+	}
 
-	// Check whetever service_instance exists and is in state 'succeeded'
-	if err = sm.WaitServiceInstanceTo("create", id); err != nil {
+	// Wait, catching any errors
+	if _, err = stateConf.WaitForState(); err != nil {
 		return err
 	}
 
@@ -254,12 +263,16 @@ func resourceServiceInstanceUpdate(d *schema.ResourceData, meta interface{}) (er
 		return err
 	}
 
-	if err != nil {
-		return err
+	stateConf := &resource.StateChangeConf{
+		Pending:      resourceServiceInstancePendingStates,
+		Target:       resourceServiceInstanceSucceesStates,
+		Refresh:      resourceServiceInstanceStateFunc(id, "update", meta),
+		Timeout:      d.Timeout(schema.TimeoutUpdate),
+		PollInterval: 30 * time.Second,
+		Delay:        5 * time.Second,
 	}
-
-	// Check whetever service_instance exists and is in state 'succeeded'
-	if err = sm.WaitServiceInstanceTo("update", id); err != nil {
+	// Wait, catching any errors
+	if _, err = stateConf.WaitForState(); err != nil {
 		return err
 	}
 
@@ -287,9 +300,16 @@ func resourceServiceInstanceDelete(d *schema.ResourceData, meta interface{}) (er
 	if err = sm.DeleteServiceInstance(id); err != nil {
 		return err
 	}
-
-	// Check whether service_instance has been indeed deleted (sometimes takes very long))
-	if err = sm.WaitDeletionServiceInstance(id); err != nil {
+	stateConf := &resource.StateChangeConf{
+		Pending:      resourceServiceInstancePendingStates,
+		Target:       resourceServiceInstanceSucceesStates,
+		Refresh:      resourceServiceInstanceStateFunc(id, "delete", meta),
+		Timeout:      d.Timeout(schema.TimeoutDelete),
+		PollInterval: 30 * time.Second,
+		Delay:        5 * time.Second,
+	}
+	// Wait, catching any errors
+	if _, err = stateConf.WaitForState(); err != nil {
 		return err
 	}
 
@@ -321,7 +341,49 @@ func resourceServiceInstanceImport(d *schema.ResourceData, meta interface{}) ([]
 	// json_param can't be retrieved from CF, please inject manually if necessary
 	d.Set("json_param", "")
 
-	return []*schema.ResourceData{d}, nil
+	return ImportStatePassthrough(d, meta)
+}
+
+func resourceServiceInstanceStateFunc(serviceInstanceID string, operationType string, meta interface{}) resource.StateRefreshFunc {
+	return func() (interface{}, string, error) {
+		session := meta.(*cfapi.Session)
+		sm := session.ServiceManager()
+		var err error
+		var serviceInstance cfapi.CCServiceInstance
+		if serviceInstance, err = sm.ReadServiceInstance(serviceInstanceID); err != nil {
+			// if the service instance is gone the error message should contain error code 60004 ("ServiceInstanceNotFound")
+			// which is the correct behavour if the service instance has been deleted
+			// e.g. CLI output: cf_service_instance.redis: Server error, status code: 404, error code: 60004, message: The service instance could not be found: babababa-d977-4e9c-9bd0-4903d146d822
+			if strings.Contains(err.Error(), "error code: 60004") && operationType == "delete" {
+				return serviceInstance, "succeeded", nil
+			} else {
+				session.Log.DebugMessage("Error on retrieving the serviceInstance %s", serviceInstanceID)
+				return nil, "", err
+			}
+			return nil, "", err
+		}
+
+		if serviceInstance.LastOperation["type"] == operationType {
+			state := serviceInstance.LastOperation["state"]
+			switch state {
+			case "succeeded":
+				return serviceInstance, "succeeded", nil
+			case "failed":
+				session.Log.DebugMessage("service instance with guid=%s async provisioning has failed", serviceInstanceID)
+				return nil, "", err
+			}
+		}
+
+		return serviceInstance, "in progress", nil
+	}
+}
+
+var resourceServiceInstancePendingStates = []string{
+	"in progress",
+}
+
+var resourceServiceInstanceSucceesStates = []string{
+	"succeeded",
 }
 
 // #######################
