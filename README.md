@@ -14,7 +14,7 @@ Following Features/Issues have been implmented/fixed:
 - [Application Update fails](https://github.com/mevansam/terraform-provider-cf/issues/32) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/118)
 - [Deletion of Service Instances](https://github.com/mevansam/terraform-provider-cf/issues/36)
 - [Add a blue green strategy](https://github.com/mevansam/terraform-provider-cf/issues/25)
-- [Fix unexpected EOF errors on cf_app deployment](https://github.com/chrismathias/terraform-provider-cf/pull/12)
+- [Fix unexpected EOF errors on cf_app deployment](https://github.com/chrismathias/terraform-provider-cf/pull/12) - [Merged](https://github.com/mevansam/terraform-provider-cf/pull/132)
 - [Fix error of import apps with credentials in list](https://github.com/chrismathias/terraform-provider-cf/pull/14)
 - [Fix route mapping bug with multiple routes on application updates](https://github.com/chrismathias/terraform-provider-cf/pull/13)
 - [Better import support](https://github.com/chrismathias/terraform-provider-cf/commits/several-imports)
