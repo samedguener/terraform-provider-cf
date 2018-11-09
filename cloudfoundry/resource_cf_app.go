@@ -447,14 +447,14 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) error {
 		vv := v.(map[string]interface{})
 		app.Environment = &vv
 	}
-	if v, ok = d.GetOk("docker_image"); ok {
+	if v, ok := d.GetOk("docker_image"); ok {
 		vv := v.(string)
 		app.DockerImage = &vv
 		// Activate Diego for Docker
 		onDiego := true
 		app.Diego = &onDiego
 	}
-	if v, ok = d.GetOk("docker_credentials"); ok {
+	if v, ok := d.GetOk("docker_credentials"); ok {
 		vv := v.(map[string]interface{})
 		app.DockerCredentials = &vv
 	}
@@ -554,11 +554,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 	if v, ok := d.GetOk("add_content"); ok {
 		addContent = getListOfStructs(v)
 	}
-	// Upload application binary / source
-	// asynchronously once download has completed
-	if err = <-prepare; err != nil {
-		return err
-	}
+
 	upload := make(chan error)
 	// Skip if Docker repo is given
 	if _, ok := d.GetOk("docker_image"); !ok {
@@ -774,6 +770,8 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	}
 
 	// TODO: clean-up old deposed resources
+
+	am := session.AppManager()
 
 	app := cfapi.CCApp{}
 	d.Partial(true)
