@@ -51,7 +51,6 @@ resource "cloudfoundry_service_instance" "fs1" {
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring"
 	space = "${data.cloudfoundry_space.space.id}"
-	instances = "2"
 	memory = "768"
 	disk_quota = "512"
 	timeout = 1800
@@ -939,16 +938,16 @@ func TestApp_OldStyleRoutes_failLiveStage(t *testing.T) {
 			IsUnitTest:   true,
 			PreCheck:     func() { testAccPreCheck(t) },
 			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
 			Steps: []resource.TestStep{
 
 				resource.TestStep{
 					PlanOnly:    true,
 					ExpectError: regexp.MustCompile("\\[REMOVED\\] Support for the non-default route has been removed."),
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
 						``,
 						`route {
-							live_route = "${cf_route.spring-music.id}"
+							live_route = "${cloudfoundry_route.java-spring.id}"
 						}`,
 					),
 				},
@@ -956,10 +955,10 @@ func TestApp_OldStyleRoutes_failLiveStage(t *testing.T) {
 				resource.TestStep{
 					PlanOnly:    true,
 					ExpectError: regexp.MustCompile("\\[REMOVED\\] Support for the non-default route has been removed."),
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
 						``,
 						`route {
-							stage_route = "${cf_route.spring-music.id}"
+							stage_route = "${cloudfoundry_route.java-spring.id}"
 						}`,
 					),
 				},
@@ -987,198 +986,6 @@ func TestApp_bluegreen_maxShutdownWait(t *testing.T) {
 							shutdown_wait = 16
 						}
 						`,
-					),
-				},
-			},
-		})
-}
-
-func TestAccApp_NewStyleRoutes_updateTo(t *testing.T) {
-
-	refApp := "cf_app.spring-music"
-
-	resource.Test(t,
-		resource.TestCase{
-			PreCheck:     func() { testAccPreCheck(t) },
-			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
-			Steps: []resource.TestStep{
-
-				resource.TestStep{
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
-						``,
-						`route {
-							default_route = "${cf_route.spring-music.id}"
-						}`,
-					),
-					Check: resource.ComposeTestCheckFunc(
-						testAccCheckAppExists(refApp, func() (err error) {
-
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
-								return err
-							}
-							return
-						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
-						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
-						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
-						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
-						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
-						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
-						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
-						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
-						resource.TestCheckNoResourceAttr(refApp, "service_binding.#"),
-						resource.TestCheckResourceAttr(refApp, "route.#", "1"),
-						resource.TestCheckNoResourceAttr(refApp, "routes.#"),
-					),
-				},
-
-				resource.TestStep{
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
-						``,
-						`routes {
-							route = "${cf_route.spring-music.id}"
-						}`,
-					),
-					Check: resource.ComposeTestCheckFunc(
-						testAccCheckAppExists(refApp, func() (err error) {
-
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
-								return err
-							}
-							return
-						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
-						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
-						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
-						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
-						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
-						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
-						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
-						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
-						resource.TestCheckNoResourceAttr(refApp, "service_binding.#"),
-						resource.TestCheckResourceAttr(refApp, "route.#", "0"),
-						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
-					),
-				},
-			},
-		})
-}
-
-func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
-
-	refApp := "cf_app.spring-music"
-
-	resource.Test(t,
-		resource.TestCase{
-			PreCheck:     func() { testAccPreCheck(t) },
-			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
-			Steps: []resource.TestStep{
-
-				resource.TestStep{
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
-						``,
-						`route {
-							default_route = "${cf_route.spring-music.id}"
-						}`,
-					),
-					Check: resource.ComposeTestCheckFunc(
-						testAccCheckAppExists(refApp, func() (err error) {
-
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
-								return err
-							}
-							return
-						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
-						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
-						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
-						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
-						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
-						resource.TestCheckResourceAttrSet(refApp, "stack"),
-						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
-						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
-						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
-						resource.TestCheckNoResourceAttr(refApp, "service_binding.#"),
-						resource.TestCheckResourceAttr(refApp, "route.#", "1"),
-						resource.TestCheckNoResourceAttr(refApp, "routes.#"),
-					),
-				},
-
-				resource.TestStep{
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceSpringMusicTemplate, defaultAppDomain()),
-						`resource "cf_route" "spring-music-2" {
-							domain = "${data.cf_domain.local.id}"
-							space = "${data.cf_space.space.id}"
-							hostname = "spring-music-2"
-						}`,
-						`routes {
-							route = "${cf_route.spring-music.id}"
-						}
-						routes {
-							route = "${cf_route.spring-music-2.id}"
-						}`,
-					),
-					Check: resource.ComposeTestCheckFunc(
-						testAccCheckAppExists(refApp, func() (err error) {
-
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
-								return err
-							}
-							if err = assertHTTPResponse("https://spring-music-2."+defaultAppDomain(), 200, nil); err != nil {
-								return err
-							}
-							return
-						}),
-						resource.TestCheckResourceAttr(refApp, "name", "test-app"),
-						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
-						resource.TestCheckResourceAttr(refApp, "ports.#", "2"),
-						resource.TestCheckResourceAttr(refApp, "ports.8888", "8888"),
-						resource.TestCheckResourceAttr(refApp, "ports.9999", "9999"),
-					),
-				},
-			},
-		})
-}
-
-func TestApp_OldStyleRoutes_failLiveStage(t *testing.T) {
-
-	resource.Test(t,
-		resource.TestCase{
-			IsUnitTest:   true,
-			PreCheck:     func() { testAccPreCheck(t) },
-			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
-			Steps: []resource.TestStep{
-
-				resource.TestStep{
-					PlanOnly:    true,
-					ExpectError: regexp.MustCompile("\\[REMOVED\\] Support for the non-default route has been removed."),
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
-						``,
-						`route {
-							live_route = "${cloudfoundry_route.java-spring.id}"
-						}`,
-					),
-				},
-
-				resource.TestStep{
-					PlanOnly:    true,
-					ExpectError: regexp.MustCompile("\\[REMOVED\\] Support for the non-default route has been removed."),
-					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
-						``,
-						`route {
-							stage_route = "${cloudfoundry_route.java-spring.id}"
-						}`,
 					),
 				},
 			},
