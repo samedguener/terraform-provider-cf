@@ -14,6 +14,7 @@ import (
 
 	"code.cloudfoundry.org/cli/cf/terminal"
 
+	"github.com/hashicorp/terraform/helper/resource"
 	"github.com/hashicorp/terraform/helper/schema"
 	"github.com/hashicorp/terraform/helper/validation"
 	"github.com/terraform-providers/terraform-provider-cloudfoundry/cloudfoundry/cfapi"
@@ -448,98 +449,85 @@ func validateAppDeposedMapEmpty(v interface{}, k string) (ws []string, errs []er
 type cfAppConfig struct {
 	app             cfapi.CCApp
 	routeConfig     map[string]interface{}
+	routesConfig    []interface{}
 	serviceBindings []map[string]interface{}
 }
 
-func resourceAppCreate(d *schema.ResourceData, meta interface{}) error {
+func resourceAppCreate(d *schema.ResourceData, meta interface{}) (err error) {
 
 	session := meta.(*cfapi.Session)
 	if session == nil {
 		return fmt.Errorf("client is nil")
 	}
 
-	am := session.AppManager()
-	rm := session.RouteManager()
-
 	var (
 		v  interface{}
 		ok bool
 
 		app cfapi.CCApp
-
-		appPath string
-
-		addContent []map[string]interface{}
-
-		defaultRoute string
-
-		serviceBindings    []map[string]interface{}
-		hasServiceBindings bool
-
-		routeConfig map[string]interface{}
 	)
 
 	app.Name = d.Get("name").(string)
 	app.SpaceGUID = d.Get("space").(string)
-	if v, ok := d.GetOk("ports"); ok {
+	if v, ok = d.GetOk("ports"); ok {
 		p := []int{}
 		for _, vv := range v.(*schema.Set).List() {
 			p = append(p, vv.(int))
 		}
 		app.Ports = &p
 	}
-	if v, ok := d.GetOk("instances"); ok {
+	if v, ok = d.GetOk("instances"); ok {
 		vv := v.(int)
 		app.Instances = &vv
 	}
-	if v, ok := d.GetOk("memory"); ok {
+	if v, ok = d.GetOk("memory"); ok {
 		vv := v.(int)
 		app.Memory = &vv
 	}
-	if v, ok := d.GetOk("disk_quota"); ok {
+	if v, ok = d.GetOk("disk_quota"); ok {
 		vv := v.(int)
 		app.DiskQuota = &vv
 	}
-	if v, ok := d.GetOk("stack"); ok {
+	if v, ok = d.GetOk("stack"); ok {
 		vv := v.(string)
 		app.StackGUID = &vv
 	}
-	if v, ok := d.GetOk("buildpack"); ok {
+	if v, ok = d.GetOk("buildpack"); ok {
 		vv := v.(string)
 		app.Buildpack = &vv
 	}
-	if v, ok := d.GetOk("command"); ok {
+	if v, ok = d.GetOk("command"); ok {
 		vv := v.(string)
 		app.Command = &vv
 	}
-	if v, ok := d.GetOk("enable_ssh"); ok {
+	if v, ok = d.GetOk("enable_ssh"); ok {
 		vv := v.(bool)
 		app.EnableSSH = &vv
 	}
-	if v, ok := d.GetOk("health_check_http_endpoint"); ok {
+	if v, ok = d.GetOk("health_check_http_endpoint"); ok {
 		vv := v.(string)
 		app.HealthCheckHTTPEndpoint = &vv
 	}
-	if v, ok := d.GetOk("health_check_type"); ok {
+	if v, ok = d.GetOk("health_check_type"); ok {
 		vv := v.(string)
 		app.HealthCheckType = &vv
 	}
-	if v, ok := d.GetOk("health_check_timeout"); ok {
+	if v, ok = d.GetOk("health_check_timeout"); ok {
 		vv := v.(int)
 		app.HealthCheckTimeout = &vv
 	}
-	if v, ok := d.GetOk("environment"); ok {
+	if v, ok = d.GetOk("environment"); ok {
 		vv := v.(map[string]interface{})
 		app.Environment = &vv
 	}
-	if v, ok := d.GetOk("docker_image"); ok {
+	if v, ok = d.GetOk("docker_image"); ok {
 		vv := v.(string)
 		app.DockerImage = &vv
 		// Activate Diego for Docker
 		onDiego := true
 		app.Diego = &onDiego
 	}
-	if v, ok := d.GetOk("docker_credentials"); ok {
+	if v, ok = d.GetOk("docker_credentials"); ok {
 		vv := v.(map[string]interface{})
 		app.DockerCredentials = &vv
 	}
@@ -554,8 +542,17 @@ func resourceAppCreate(d *schema.ResourceData, meta interface{}) error {
 
 	d.SetId(appConfig.app.ID)
 	setAppArguments(appConfig.app, d)
-	d.Set("service_binding", appConfig.serviceBindings)
-	d.Set("route", []map[string]interface{}{appConfig.routeConfig})
+	if len(appConfig.serviceBindings) > 0 {
+		d.Set("service_binding", appConfig.serviceBindings)
+	}
+	if len(appConfig.routeConfig) > 0 {
+		d.Set("route", []map[string]interface{}{appConfig.routeConfig})
+	}
+	if len(appConfig.routesConfig) > 0 {
+		if err := d.Set("routes", schema.NewSet(hashRouteMappingSet, appConfig.routesConfig)); err != nil {
+			return err
+		}
+	}
 
 	return nil
 }
@@ -576,13 +573,14 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 
 		appPath string
 
-		defaultRoute, stageRoute, liveRoute string
+		// defaultRoute, stageRoute, liveRoute string
+		defaultRoute string
 
 		serviceBindings    []map[string]interface{}
 		hasServiceBindings bool
 
-		routeConfig    map[string]interface{}
-		hasRouteConfig bool
+		routeConfig map[string]interface{}
+		// hasRouteConfig bool
 	)
 
 	// Skip if Docker repo is given
@@ -597,7 +595,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
 
-		if defaultRoute, err = validateRouteLegacy(routeConfig, "default_route", rm); err != nil {
+		if defaultRoute, err = validateRouteLegacy(routeConfig, "default_route", d.Id(), rm); err != nil {
 			return err
 		}
 	}
@@ -1154,7 +1152,7 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 				"stage_route",
 				"live_route",
 			} {
-				if _, err := validateRouteLegacy(newRouteConfig, r, rm); err != nil {
+				if _, err := validateRouteLegacy(newRouteConfig, r, app.ID, rm); err != nil {
 					return err
 				}
 				if mappingID, err := updateAppRouteMappings(oldRouteConfig, newRouteConfig, r, app.ID, rm); err != nil {
