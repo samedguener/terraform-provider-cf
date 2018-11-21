@@ -16,17 +16,17 @@ import (
 const appResourceJavaSpringTemplate = `
 
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 data "cloudfoundry_service" "mysql" {
-  name = "p-mysql"
+	name = "p-mysql"
 }
 data "cloudfoundry_service" "rmq" {
 	name = "p-rabbitmq"
@@ -39,8 +39,8 @@ resource "cloudfoundry_route" "java-spring" {
 }
 resource "cloudfoundry_service_instance" "db" {
 	name = "db"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
+	space = "${data.cloudfoundry_space.space.id}"
+	service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
 }
 resource "cloudfoundry_service_instance" "fs1" {
 	name = "fs1"
@@ -51,7 +51,7 @@ resource "cloudfoundry_service_instance" "fs1" {
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring"
 	space = "${data.cloudfoundry_space.space.id}"
-	memory = "768"
+	memory = "256"
 	disk_quota = "512"
 	timeout = 1800
 
@@ -64,20 +64,20 @@ resource "cloudfoundry_app" "java-spring" {
 const appResourceJavaSpring = `
 
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 data "cloudfoundry_service" "mysql" {
-  name = "p-mysql"
+	name = "p-mysql"
 }
 data "cloudfoundry_service" "rmq" {
-  name = "p-rabbitmq"
+	name = "p-rabbitmq"
 }
 
 resource "cloudfoundry_route" "java-spring" {
@@ -87,19 +87,19 @@ resource "cloudfoundry_route" "java-spring" {
 }
 resource "cloudfoundry_service_instance" "db" {
 	name = "db"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
+	space = "${data.cloudfoundry_space.space.id}"
+	service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
 }
 resource "cloudfoundry_service_instance" "fs1" {
 	name = "fs1"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
+	space = "${data.cloudfoundry_space.space.id}"
+	service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
 }
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring"
 	space = "${data.cloudfoundry_space.space.id}"
 	instances = "1"
-	memory = "768"
+	memory = "256"
 	disk_quota = "512"
 	timeout = 1800
 
@@ -126,20 +126,20 @@ resource "cloudfoundry_app" "java-spring" {
 const appResourceJavaSpringUpdate = `
 
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 data "cloudfoundry_service" "mysql" {
-  name = "p-mysql"
+	name = "p-mysql"
 }
 data "cloudfoundry_service" "rmq" {
-  name = "p-rabbitmq"
+	name = "p-rabbitmq"
 }
 
 resource "cloudfoundry_route" "java-spring" {
@@ -149,18 +149,18 @@ resource "cloudfoundry_route" "java-spring" {
 }
 resource "cloudfoundry_service_instance" "db" {
 	name = "db"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
+	space = "${data.cloudfoundry_space.space.id}"
+	service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
 }
 resource "cloudfoundry_service_instance" "fs1" {
 	name = "fs1"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
+	space = "${data.cloudfoundry_space.space.id}"
+	service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
 }
 resource "cloudfoundry_service_instance" "fs2" {
 	name = "fs2"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
+	space = "${data.cloudfoundry_space.space.id}"
+	service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
 }
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring-updated"
@@ -193,93 +193,13 @@ resource "cloudfoundry_app" "java-spring" {
 }
 `
 
-const appResourceSpringMusicBlueGreenUpdate = `
-
-data "cloudfoundry_domain" "local" {
-  name = "%s"
-}
-data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
-}
-data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
-	org = "${data.cloudfoundry_org.org.id}"
-}
-data "cloudfoundry_service" "mysql" {
-  name = "p-mysql"
-}
-data "cloudfoundry_service" "rmq" {
-  name = "p-rabbitmq"
-}
-
-resource "cloudfoundry_route" "spring-music" {
-	domain = "${data.cloudfoundry_domain.local.id}"
-	space = "${data.cloudfoundry_space.space.id}"
-	hostname = "spring-music"
-}
-resource "cloudfoundry_route" "spring-music-stage" {
-	domain = "${data.cloudfoundry_domain.local.id}"
-	space = "${data.cloudfoundry_space.space.id}"
-	hostname = "spring-music-stage"
-}
-resource "cloudfoundry_service_instance" "db" {
-	name = "db"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.mysql.service_plans.512mb}"
-}
-resource "cloudfoundry_service_instance" "fs1" {
-	name = "fs1"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
-}
-resource "cloudfoundry_service_instance" "fs2" {
-	name = "fs2"
-  space = "${data.cloudfoundry_space.space.id}"
-  service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
-}
-resource "cloudfoundry_app" "spring-music" {
-	name = "spring-music-updated"
-	space = "${data.cloudfoundry_space.space.id}"
-	instances ="3"
-	memory = "1024"
-	disk_quota = "1024"
-	timeout = 1800
-
-	url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"
-
-	service_binding {
-		service_instance = "${cloudfoundry_service_instance.db.id}"
-	}
-	service_binding {
-		service_instance = "${cloudfoundry_service_instance.fs2.id}"
-	}
-	service_binding {
-		service_instance = "${cloudfoundry_service_instance.fs1.id}"
-	}
-
-	route {
-		live_route = "${cloudfoundry_route.spring-music.id}"
-		stage_route = "${cloudfoundry_route.spring-music-stage.id}"
-	}
-
-	environment {
-		TEST_VAR_1 = "testval1"
-		TEST_VAR_2 = "testval2"
-	}
-
-	blue_green = {
-		enable = true
-	}
-}
-`
-
 const appResourceWithMultiplePorts = `
 
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
     name = "pcfdev-space"
@@ -329,13 +249,13 @@ resource "cloudfoundry_route" "test-app-9999" {
 const appResourceDocker = `
 
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 
@@ -359,27 +279,27 @@ resource "cloudfoundry_app" "test-docker-app" {
 
 const multipleVersion = `
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 resource "cloudfoundry_route" "test-app" {
 	domain = "${data.cloudfoundry_domain.local.id}"
 	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "test-app"
-  target = {app = "${cloudfoundry_app.test-app.id}"}
+	target = {app = "${cloudfoundry_app.test-app.id}"}
 }
 resource "cloudfoundry_app" "test-app" {
 	name = "test-app"
 	space = "${data.cloudfoundry_space.space.id}"
 	command = "test-app --ports=8080"
 	timeout = 1800
-  memory = "512"
+	memory = "512"
 	git {
 		url = "https://github.com/mevansam/test-app.git"
 	}
@@ -388,13 +308,13 @@ resource "cloudfoundry_app" "test-app" {
 
 const multipleVersionUpdate = `
 data "cloudfoundry_domain" "local" {
-  name = "%s"
+	name = "%s"
 }
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 
@@ -402,14 +322,14 @@ resource "cloudfoundry_route" "test-app" {
 	domain = "${data.cloudfoundry_domain.local.id}"
 	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "test-app"
-  target = {app = "${cloudfoundry_app.test-app.id}"}
+  	target = {app = "${cloudfoundry_app.test-app.id}"}
 }
 resource "cloudfoundry_app" "test-app" {
 	name = "test-app"
 	space = "${data.cloudfoundry_space.space.id}"
 	command = "test-app --ports=8080"
 	timeout = 1800
-  memory = "1024"
+  	memory = "1024"
 	git {
 		url = "https://github.com/janosbinder/test-app.git"
 	}
@@ -419,31 +339,31 @@ resource "cloudfoundry_app" "test-app" {
 const createManyJavaSpringApps = `
 
 data "cloudfoundry_domain" "java-spring-domain" {
-  name = "%s"
+	name = "%s"
 }
 
 data "cloudfoundry_org" "org" {
-  name = "pcfdev-org"
+	name = "pcfdev-org"
 }
 data "cloudfoundry_space" "space" {
-  name = "pcfdev-space"
+	name = "pcfdev-space"
 	org = "${data.cloudfoundry_org.org.id}"
 }
 
 resource "cloudfoundry_route" "java-spring-route-1" {
 	domain = "${data.cloudfoundry_domain.java-spring-domain.id}"
-  space = "${data.cloudfoundry_space.space.id}"
+	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "java-spring-1"
 	depends_on = ["data.cloudfoundry_domain.java-spring-domain"]
 }
 
 resource "cloudfoundry_app" "java-spring-app-1" {
-  name = "java-spring-app-1"
+	name = "java-spring-app-1"
 	url = "file://../tests/cf-acceptance-tests/assets/java-spring/"
 	space = "${data.cloudfoundry_space.space.id}"
 	timeout = 700
-  memory = 512
-  buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
+	memory = 512
+	buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
 
 	route {
 		default_route = "${cloudfoundry_route.java-spring-route-1.id}"
@@ -454,18 +374,18 @@ resource "cloudfoundry_app" "java-spring-app-1" {
 
 resource "cloudfoundry_route" "java-spring-route-2" {
 	domain = "${data.cloudfoundry_domain.java-spring-domain.id}"
-  space = "${data.cloudfoundry_space.space.id}"
+	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "java-spring-2"
 	depends_on = ["data.cloudfoundry_domain.java-spring-domain"]
 }
 
 resource "cloudfoundry_app" "java-spring-app-2" {
-  name = "java-spring-app-2"
+	name = "java-spring-app-2"
 	url = "file://../tests/cf-acceptance-tests/assets/java-spring/"
 	space = "${data.cloudfoundry_space.space.id}"
 	timeout = 700
-  memory = 512
-  buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
+	memory = 512
+	buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
 
 	route {
 		default_route = "${cloudfoundry_route.java-spring-route-2.id}"
@@ -476,18 +396,18 @@ resource "cloudfoundry_app" "java-spring-app-2" {
 
 resource "cloudfoundry_route" "java-spring-route-3" {
 	domain = "${data.cloudfoundry_domain.java-spring-domain.id}"
-  space = "${data.cloudfoundry_space.space.id}"
+	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "java-spring-3"
 	depends_on = ["data.cloudfoundry_domain.java-spring-domain"]
 }
 
 resource "cloudfoundry_app" "java-spring-app-3" {
-  name = "java-spring-app-3"
+	name = "java-spring-app-3"
 	url = "file://../tests/cf-acceptance-tests/assets/java-spring/"
 	space = "${data.cloudfoundry_space.space.id}"
 	timeout = 700
-  memory = 512
-  buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
+	memory = 512
+	buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
 
 	route {
 		default_route = "${cloudfoundry_route.java-spring-route-3.id}"
@@ -498,18 +418,18 @@ resource "cloudfoundry_app" "java-spring-app-3" {
 
 resource "cloudfoundry_route" "java-spring-route-4" {
 	domain = "${data.cloudfoundry_domain.java-spring-domain.id}"
-  space = "${data.cloudfoundry_space.space.id}"
+	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "java-spring-4"
 	depends_on = ["data.cloudfoundry_domain.java-spring-domain"]
 }
 
 resource "cloudfoundry_app" "java-spring-app-4" {
-  name = "java-spring-app-4"
+	name = "java-spring-app-4"
 	url = "file://../tests/cf-acceptance-tests/assets/java-spring/"
 	space = "${data.cloudfoundry_space.space.id}"
 	timeout = 700
-  memory = 512
-  buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
+	memory = 512
+	buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
 
 	route {
 		default_route = "${cloudfoundry_route.java-spring-route-4.id}"
@@ -520,18 +440,18 @@ resource "cloudfoundry_app" "java-spring-app-4" {
 
 resource "cloudfoundry_route" "java-spring-route-5" {
 	domain = "${data.cloudfoundry_domain.java-spring-domain.id}"
-  space = "${data.cloudfoundry_space.space.id}"
+	space = "${data.cloudfoundry_space.space.id}"
 	hostname = "java-spring-5"
 	depends_on = ["data.cloudfoundry_domain.java-spring-domain"]
 }
 
 resource "cloudfoundry_app" "java-spring-app-5" {
-  name = "java-spring-app-5"
+	name = "java-spring-app-5"
 	url = "file://../tests/cf-acceptance-tests/assets/java-spring/"
 	space = "${data.cloudfoundry_space.space.id}"
 	timeout = 700
-  memory = 512
-  buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
+	memory = 512
+	buildpack = "https://github.com/cloudfoundry/java-buildpack.git"
 
 	route {
 		default_route = "${cloudfoundry_route.java-spring-route-5.id}"
@@ -680,7 +600,7 @@ func TestAccApp_app1(t *testing.T) {
 							resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 							resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 							resource.TestCheckResourceAttr(refApp, "instances", "1"),
-							resource.TestCheckResourceAttr(refApp, "memory", "768"),
+							resource.TestCheckResourceAttr(refApp, "memory", "256"),
 							resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 							resource.TestCheckResourceAttrSet(refApp, "stack"),
 							resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
@@ -741,7 +661,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 			default:
 			}
 			time.Sleep(time.Second * time.Duration(1))
-			if err := assertHTTPResponse("https://spring-music."+defaultAppDomain(), 404, nil); err != nil {
+			if err := assertHTTPResponse("https://java-spring."+defaultAppDomain(), 404, nil); err != nil {
 				break
 			}
 		}
@@ -755,7 +675,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 			default:
 			}
 			time.Sleep(time.Second * time.Duration(1) / 2)
-			if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+			if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
 				break
 			}
 		}
@@ -784,7 +704,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 										service_instance = "${cloudfoundry_service_instance.fs1.id}"
 									}
 									routes {
-										route = "${cloudfoundry_route.spring-music.id}"
+										route = "${cloudfoundry_route.java-spring.id}"
 									}`,
 									),
 					Check: resource.ComposeTestCheckFunc(
@@ -800,7 +720,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "3"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -814,26 +734,26 @@ func TestAccApp_bluegreen(t *testing.T) {
 
 				resource.TestStep{
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
-									`resource "cf_service_instance" "fs2" {
+									`resource "cloudfoundry_service_instance" "fs2" {
 										name = "fs2"
-										space = "${data.cf_space.space.id}"
-										service_plan = "${data.cf_service.rmq.service_plans.standard}"
+										space = "${data.cloudfoundry_space.space.id}"
+										service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
 									}`,
 									`instances = 4
 									blue_green {
 										enable = true
 									}
 									service_binding {
-										service_instance = "${cf_service_instance.db.id}"
+										service_instance = "${cloudfoundry_service_instance.db.id}"
 									}
 									service_binding {
-										service_instance = "${cf_service_instance.fs1.id}"
+										service_instance = "${cloudfoundry_service_instance.fs1.id}"
 									}
 									service_binding {
-										service_instance = "${cf_service_instance.fs2.id}"
+										service_instance = "${cloudfoundry_service_instance.fs2.id}"
 									}
 									routes {
-										route = "${cf_route.spring-music.id}"
+										route = "${cloudfoundry_route.java-spring.id}"
 									}`,
 									),
 					Check: resource.ComposeTestCheckFunc(
@@ -844,12 +764,12 @@ func TestAccApp_bluegreen(t *testing.T) {
 							}
 							return
 						}),
-						resource.TestCheckResourceAttr(refApp, "name", "java-spring-updated"),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "4"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -872,10 +792,10 @@ func TestAccApp_bluegreen(t *testing.T) {
 										space = "${data.cloudfoundry_space.space.id}"
 										service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
 									}
-									resource "cloudfoundry_route" "spring-music-2" {
+									resource "cloudfoundry_route" "java-spring-2" {
 										domain = "${data.cloudfoundry_domain.local.id}"
 										space = "${data.cloudfoundry_space.space.id}"
-										hostname = "spring-music-2"
+										hostname = "java-spring-2"
 									}`,
 									`instances = 2
 									blue_green {
@@ -885,10 +805,10 @@ func TestAccApp_bluegreen(t *testing.T) {
 										service_instance = "${cloudfoundry_service_instance.db.id}"
 									}
 									routes {
-										route = "${cloudfoundry_route.spring-music.id}"
+										route = "${cloudfoundry_route.java-spring.id}"
 									}
 									routes {
-										route = "${cloudfoundry_route.spring-music-2.id}"
+										route = "${cloudfoundry_route.java-spring-2.id}"
 									}`,
 									),
 					Check: resource.ComposeAggregateTestCheckFunc(
@@ -899,17 +819,17 @@ func TestAccApp_bluegreen(t *testing.T) {
 						},
 						testAccCheckAppExists(refApp, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
 						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "2"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -923,9 +843,10 @@ func TestAccApp_bluegreen(t *testing.T) {
 			},
 		})
 }
+
 func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 
-	refApp := "cloudfoundry_app.spring-music"
+	refApp := "cloudfoundry_app.java-spring"
 
 	downtimeCheck := make(chan error, 1)
 	testComplete := make(chan bool, 1)
@@ -942,7 +863,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 			default:
 			}
 			time.Sleep(time.Second * time.Duration(1))
-			if err := assertHTTPResponse("https://spring-music."+defaultAppDomain(), 404, nil); err != nil {
+			if err := assertHTTPResponse("https://java-spring."+defaultAppDomain(), 404, nil); err != nil {
 				break
 			}
 		}
@@ -956,7 +877,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 			default:
 			}
 			time.Sleep(time.Second * time.Duration(1) / 2)
-			if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+			if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
 				break
 			}
 		}
@@ -968,7 +889,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 		resource.TestCase{
 			PreCheck:     func() { testAccPreCheck(t) },
 			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
 			Steps: []resource.TestStep{
 
 				resource.TestStep{
@@ -982,23 +903,23 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 							service_instance = "${cloudfoundry_service_instance.db.id}"
 						}
 						routes {
-							route = "${cloudfoundry_route.spring-music.id}"
+							route = "${cloudfoundry_route.java-spring.id}"
 						}`,
 					),
 					Check: resource.ComposeAggregateTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
 						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "3"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1025,7 +946,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 							service_instance = "${cloudfoundry_service_instance.fs1.id}"
 						}
 						routes {
-							route = "${cloudfoundry_route.spring-music.id}"
+							route = "${cloudfoundry_route.java-spring.id}"
 						}`,
 					),
 					Check: resource.ComposeAggregateTestCheckFunc(
@@ -1036,17 +957,17 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 						},
 						testAccCheckAppExists(refApp, func() (err error) {
 
-							if err = assertHTTPResponse("https://spring-music."+defaultAppDomain(), 200, nil); err != nil {
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
 								return err
 							}
 							return
 						}),
-						resource.TestCheckResourceAttr(refApp, "name", "spring-music"),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "4"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1060,6 +981,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 			},
 		})
 }
+
 func TestAccApp_app2(t *testing.T) {
 
 	refApp := "cloudfoundry_app.test-app"
@@ -1138,7 +1060,7 @@ func TestApp_bluegreen_maxShutdownWait(t *testing.T) {
 			IsUnitTest:   true,
 			PreCheck:     func() { testAccPreCheck(t) },
 			Providers:    testAccProviders,
-			CheckDestroy: testAccCheckAppDestroyed([]string{"spring-music"}),
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
 			Steps: []resource.TestStep{
 
 				resource.TestStep{
@@ -1188,7 +1110,7 @@ func TestAccApp_NewStyleRoutes_updateTo(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1220,7 +1142,7 @@ func TestAccApp_NewStyleRoutes_updateTo(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1266,7 +1188,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1308,7 +1230,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1347,7 +1269,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1397,7 +1319,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1443,7 +1365,7 @@ func TestAccApp_NewStyleRoutes_Create(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1489,7 +1411,7 @@ func TestAccApp_NewStyleRoutes_Change(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1528,7 +1450,7 @@ func TestAccApp_NewStyleRoutes_Change(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1574,7 +1496,7 @@ func TestAccApp_NewStyleRoutes_Add(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1616,7 +1538,7 @@ func TestAccApp_NewStyleRoutes_Add(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "memory", "256"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),

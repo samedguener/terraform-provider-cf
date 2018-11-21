@@ -573,14 +573,15 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 
 		appPath string
 
-		// defaultRoute, stageRoute, liveRoute string
+		addContent []map[string]interface{}
+
 		defaultRoute string
 
 		serviceBindings    []map[string]interface{}
 		hasServiceBindings bool
 
 		routeConfig map[string]interface{}
-		// hasRouteConfig bool
+		hasRouteConfig bool
 	)
 
 	// Skip if Docker repo is given
@@ -591,7 +592,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 		}
 	}
 
-	if v, hasRouteConfig := d.GetOk("route"); hasRouteConfig {
+	if v, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
 
 		routeConfig = v.([]interface{})[0].(map[string]interface{})
 
@@ -618,7 +619,6 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 		}
 	}()
 
-	var addContent []map[string]interface{}
 	if v, ok := d.GetOk("add_content"); ok {
 		addContent = getListOfStructs(v)
 	}
@@ -657,7 +657,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 		}
 	}
 
-	if _, hasRouteConfig := d.GetOk("route"); hasRouteConfig {
+	if _, hasRouteConfig = d.GetOk("route"); hasRouteConfig {
 		// old style route block
 		if len(defaultRoute) > 0 {
 			// Bind default route
@@ -669,12 +669,19 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 			d.Set("route", []map[string]interface{}{routeConfig})
 			session.Log.DebugMessage("Created routes: %# v", d.Get("route"))
 		}
-	} else if v, hasRouteConfig := d.GetOk("routes"); hasRouteConfig && d.Id() == "" {
+	} else if v, hasRouteConfig = d.GetOk("routes"); hasRouteConfig && d.Id() == "" {
 		// only bind live routes at this stage if we're not doing a blue/green deployment
 		if mappedRoutes, err := addRouteMappings(app.ID, v.(*schema.Set).List(), "", rm); err != nil {
 			return err
 		} else {
 			appConfig.routesConfig = mappedRoutes
+		}
+	}
+
+	// Skip if Docker repo is given
+	if _, ok := d.GetOk("docker_image"); !ok {
+		if err = <-upload; err != nil {
+			return err
 		}
 	}
 
@@ -808,9 +815,9 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 	// TODO: clean-up old deposed resources
 
-	am := session.AppManager()
-
-	app := cfapi.CCApp{}
+	app := cfapi.CCApp{
+		ID: d.Id(),
+	}
 	d.Partial(true)
 
 	update := false // for changes where no restart is required
@@ -842,28 +849,6 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	//       service bindings are updates?)
 	app.DockerImage = getChangedValueString("docker_image", &update, d)
 	app.DockerCredentials = getChangedValueMap("docker_credentials", &update, d)
-
-	if update || restart || restage {
-		// push any updates to CF, we'll do any restage/restart later
-		var err error
-		if app, err = am.UpdateApp(app); err != nil {
-			return err
-		}
-		setAppArguments(app, d)
-		d.SetPartial("name")
-		d.SetPartial("space")
-		d.SetPartial("ports")
-		d.SetPartial("instances")
-		d.SetPartial("memory")
-		d.SetPartial("disk_quota")
-		d.SetPartial("command")
-		d.SetPartial("enable_ssh")
-		d.SetPartial("health_check_http_endpoint")
-		d.SetPartial("health_check_type")
-		d.SetPartial("health_check_timeout")
-		d.SetPartial("buildpack")
-		d.SetPartial("environment")
-	}
 
 	blueGreen := false
 	if v, ok := d.GetOk("blue_green"); ok {
@@ -1085,6 +1070,19 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 			return err
 		}
 		setAppArguments(app, d)
+		d.SetPartial("name")
+		d.SetPartial("space")
+		d.SetPartial("ports")
+		d.SetPartial("instances")
+		d.SetPartial("memory")
+		d.SetPartial("disk_quota")
+		d.SetPartial("command")
+		d.SetPartial("enable_ssh")
+		d.SetPartial("health_check_http_endpoint")
+		d.SetPartial("health_check_type")
+		d.SetPartial("health_check_timeout")
+		d.SetPartial("buildpack")
+		d.SetPartial("environment")
 	}
 
 	if d.HasChange("service_binding") {
