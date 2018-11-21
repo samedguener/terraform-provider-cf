@@ -2,7 +2,6 @@ package cloudfoundry
 
 import (
 	"fmt"
-	"github.com/hashicorp/terraform/helper/resource"
 	"io"
 	"io/ioutil"
 	"net/http"
@@ -296,33 +295,6 @@ func resourceApp() *schema.Resource {
 							Deprecated:  "Not yet implemented!",
 							Optional:    true,
 							Default:     true,
-						},
-					},
-				},
-			},
-			"routes": &schema.Schema{
-				Type:          schema.TypeSet,
-				Optional:      true,
-				MinItems:      1,
-				ConflictsWith: []string{"route"},
-				Set:           hashRouteMappingSet,
-				Elem: &schema.Resource{
-					Schema: map[string]*schema.Schema{
-						"route": &schema.Schema{
-							Type:         schema.TypeString,
-							Required:     true,
-							ValidateFunc: validation.NoZeroValues,
-						},
-						"port": &schema.Schema{
-							Type:         schema.TypeInt,
-							Optional:     true,
-							Computed:     true,
-							Deprecated:   "Not yet implemented!",
-							ValidateFunc: validation.IntBetween(1, 65535),
-						},
-						"mapping_id": &schema.Schema{
-							Type:     schema.TypeString,
-							Computed: true,
 						},
 					},
 				},

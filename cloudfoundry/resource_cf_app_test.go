@@ -51,7 +51,7 @@ resource "cloudfoundry_service_instance" "fs1" {
 resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring"
 	space = "${data.cloudfoundry_space.space.id}"
-	memory = "256"
+	memory = "768"
 	disk_quota = "512"
 	timeout = 1800
 
@@ -99,7 +99,7 @@ resource "cloudfoundry_app" "java-spring" {
 	name = "java-spring"
 	space = "${data.cloudfoundry_space.space.id}"
 	instances = "1"
-	memory = "256"
+	memory = "768"
 	disk_quota = "512"
 	timeout = 1800
 
@@ -600,7 +600,7 @@ func TestAccApp_app1(t *testing.T) {
 							resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 							resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 							resource.TestCheckResourceAttr(refApp, "instances", "1"),
-							resource.TestCheckResourceAttr(refApp, "memory", "256"),
+							resource.TestCheckResourceAttr(refApp, "memory", "768"),
 							resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 							resource.TestCheckResourceAttrSet(refApp, "stack"),
 							resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
@@ -720,7 +720,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "3"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -769,7 +769,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "4"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -829,7 +829,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "2"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -919,7 +919,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "3"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -967,7 +967,7 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "4"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1110,7 +1110,7 @@ func TestAccApp_NewStyleRoutes_updateTo(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1142,7 +1142,7 @@ func TestAccApp_NewStyleRoutes_updateTo(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1188,7 +1188,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1230,7 +1230,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1269,7 +1269,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1319,7 +1319,7 @@ func TestAccApp_NewStyleRoutes_updateToAndmore(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1365,7 +1365,7 @@ func TestAccApp_NewStyleRoutes_Create(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1411,7 +1411,7 @@ func TestAccApp_NewStyleRoutes_Change(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1450,7 +1450,7 @@ func TestAccApp_NewStyleRoutes_Change(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1496,7 +1496,7 @@ func TestAccApp_NewStyleRoutes_Add(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
@@ -1538,7 +1538,7 @@ func TestAccApp_NewStyleRoutes_Add(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
-						resource.TestCheckResourceAttr(refApp, "memory", "256"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
 						resource.TestCheckResourceAttrSet(refApp, "stack"),
 						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
