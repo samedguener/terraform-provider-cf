@@ -41,7 +41,9 @@ The following arguments are supported:
 * `stopped` - (Optional, Boolean) Defines the desired application state. Set to `false` to have the application remain in a stopped state. Default is `false`, i.e. application will be started.
 
 ### Deployment
-* `disable_blue_green_deployment` - (Required, Boolean) The application won't be deployed using [Blue/Green-Deployment-Technique](https://docs.cloudfoundry.org/devguide/deploy-apps/blue-green.html). 
+* `blue_green` - (Optional) The application will be deployed using [Blue/Green-Deployment-Technique](https://docs.cloudfoundry.org/devguide/deploy-apps/blue-green.html).
+  - `enable` - (Optional) Enable blue/green deployment or not.
+  - `shutdown_wait` - (Optional) Shutdown the old deployment after some time.
 
 ### Application Source / Binary
 

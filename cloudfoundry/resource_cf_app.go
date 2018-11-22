@@ -261,6 +261,7 @@ func resourceApp() *schema.Resource {
 						"validation_script": &schema.Schema{
 							Type:     schema.TypeString,
 							Optional: true,
+							Removed:  "The 'route' block has been deprecated.",
 						},
 					},
 				},
@@ -1057,6 +1058,7 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 		d.SetPartial("environment")
 	}
 
+	// update the application's service bindings (the necessary restage is dealt with later)
 	if d.HasChange("service_binding") {
 
 		old, new := d.GetChange("service_binding")
