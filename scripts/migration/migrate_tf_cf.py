@@ -169,7 +169,7 @@ class HCLConverter(Converter):
         if disable_blue_green_deployment_regex.match(line):
             words = line.partition("disable_blue_green_deployment")
             indent = words[0]
-            is_enabled = bool_map[words[2][:-1].split(" ")[2]] # "= false\n" remove Line Feed and other symbols
+            is_enabled = bool_map[words[2][:-1].split()[1]]  # "= false\n" remove Line Feed and other symbols
             disable_blue_green_deployment_replacement = indent + "blue_green {\n" + indent + indent + "enable = " + \
                 is_enabled + "\n" + indent + "}\n"
             if self.debug:
