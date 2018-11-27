@@ -51,7 +51,7 @@ class JSONConverter(Converter):
         provider_regex_replacement = r'provider.cloudfoundry'
         modules = state_dict['modules']
         for module in modules:
-            for key, value_dict in module['resources'].items():
+            for key, value_dict in list(module['resources'].items()):
                 # 1. change the stuff in the value dict
                 # 1a. change each moduel in depends_on
                 depending_modules = value_dict['depends_on']
@@ -126,10 +126,12 @@ class HCLConverter(Converter):
                 # Step 1. rename every cf_ to cloudfoundry_
                 line_1 = self.convert_cf2cloudfoundry(line)
                 # Step 2. remove fork specific features
-                # Step 2a. remove disable_blue_green_deployment
-                line_2 = self.remove_disable_blue_green_deployment(line_1)
-                # Step 2b. remove recursive
-                new_tf_file.write(self.remove_recursive_delete(line_2))
+                # Step 2a. replace disable_blue_green_deployment
+                line_2 = self.replace_disable_blue_green_deployment(line_1)
+                # Step 2b. replace routes
+                line_3 = self.replace_route(line_2)
+                # Step 2c. remove recursive
+                new_tf_file.write(self.remove_recursive_delete(line_3))
                 # Step 3. add new flags with default values if any - not needed
             new_tf_file.close()
         os.remove(self.tf_path)
@@ -161,12 +163,31 @@ class HCLConverter(Converter):
             return ''
         return line
 
-    def remove_disable_blue_green_deployment(self, line: str):
+    def replace_disable_blue_green_deployment(self, line: str):
         disable_blue_green_deployment_regex = re.compile(r'^\s*disable_blue_green_deployment\s*=\s*\w+\s*')
         if disable_blue_green_deployment_regex.match(line):
+            words = line.partition("disable_blue_green_deployment")
+            indent = words[0]
+            is_enabled = words[2][:-1]
+            disable_blue_green_deployment_replacement = indent + "blue_green {\n" + indent + indent + "enable" + \
+                is_enabled + "\n" + indent + "}"
             if self.debug:
-                print(f"Removing \"disable_blue_green_deployment\" attribute")
-            return ''
+                print(f"Line: \"{line[:-1]}\" matches {disable_blue_green_deployment_regex}, replacing match with "
+                      f"{disable_blue_green_deployment_replacement}")
+            return disable_blue_green_deployment_regex.sub(disable_blue_green_deployment_replacement, line)
+        return line
+
+    def replace_route(self, line: str):
+        route_regex = re.compile(r'route\s*{')
+        default_route_regex = re.compile(r'default_route\s*=')
+        if default_route_regex.search(line):
+            if self.debug:
+                print(f"Replacing \"default_route\" attribute with route")
+            return default_route_regex.sub('route =', line)
+        elif route_regex.search(line):
+            if self.debug:
+                print(f"Replacing \"route\" attribute with routes")
+            return route_regex.sub('routes {', line)
         return line
 
 
