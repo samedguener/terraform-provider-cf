@@ -165,12 +165,13 @@ class HCLConverter(Converter):
 
     def replace_disable_blue_green_deployment(self, line: str):
         disable_blue_green_deployment_regex = re.compile(r'^\s*disable_blue_green_deployment\s*=\s*\w+\s*')
+        bool_map = {"true": "false", "false": "true"}
         if disable_blue_green_deployment_regex.match(line):
             words = line.partition("disable_blue_green_deployment")
             indent = words[0]
-            is_enabled = words[2][:-1]
-            disable_blue_green_deployment_replacement = indent + "blue_green {\n" + indent + indent + "enable" + \
-                is_enabled + "\n" + indent + "}"
+            is_enabled = bool_map[words[2][:-1].split(" ")[2]] # "= false\n" remove Line Feed and other symbols
+            disable_blue_green_deployment_replacement = indent + "blue_green {\n" + indent + indent + "enable = " + \
+                is_enabled + "\n" + indent + "}\n"
             if self.debug:
                 print(f"Line: \"{line[:-1]}\" matches {disable_blue_green_deployment_regex}, replacing match with "
                       f"{disable_blue_green_deployment_replacement}")
