@@ -1,6 +1,9 @@
 Cloud Foundry Terraform Provider [![Build Status](https://travis-ci.org/mevansam/terraform-provider-cf.svg?branch=master)](https://travis-ci.org/mevansam/terraform-provider-cf)
 ================================
 
+!!!This fork has been deprecated, please use [this](https://github.com/chrismathias/terraform-provider-cf/tree/dev-bluegreen) version!!!
+=======================================================================================================================================
+
 Information about this fork
 ---------------------------
 
