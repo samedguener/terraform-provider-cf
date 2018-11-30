@@ -4,7 +4,7 @@ Cloud Foundry Terraform Provider [![Build Status](https://travis-ci.org/mevansam
 Information about this fork
 ---------------------------
 
-The [upstream repository](https://github.com/mevansam/terraform-provider-cf) was forked due to include a blue-green implementation. The fork happened at [9c9d8b5](https://github.com/mevansam/terraform-provider-cf/commit/9c9d8b58989f81f3abeb38a4bac6fa56d067c5fc).
+The [upstream repository](https://github.com/mevansam/terraform-provider-cf) was forked due to include a blue-green implementation and the recursive service deletion. The fork happened at [9c9d8b5](https://github.com/mevansam/terraform-provider-cf/commit/9c9d8b58989f81f3abeb38a4bac6fa56d067c5fc).
 
 Overview
 --------
