@@ -13,6 +13,41 @@ import (
 	"github.com/terraform-providers/terraform-provider-cloudfoundry/cloudfoundry/cfapi"
 )
 
+const appResourceUrlDockerTemplate = `
+
+data "cloudfoundry_domain" "local" {
+	name = "%s"
+}
+data "cloudfoundry_org" "org" {
+	name = "pcfdev-org"
+}
+data "cloudfoundry_space" "space" {
+	name = "pcfdev-space"
+	org = "${data.cloudfoundry_org.org.id}"
+}
+resource "cloudfoundry_route" "java-spring" {
+	domain = "${data.cloudfoundry_domain.local.id}"
+	space = "${data.cloudfoundry_space.space.id}"
+	hostname = "java-spring"
+}
+resource "cloudfoundry_app" "java-spring" {
+	name = "java-spring"
+	space = "${data.cloudfoundry_space.space.id}"
+	memory = "768"
+	disk_quota = "512"
+	timeout = 1800
+	instances = 1
+	blue_green {
+		enable = true
+	}
+	routes {
+		route = "${cloudfoundry_route.java-spring.id}"
+	}
+
+%%s
+}
+`
+
 const appResourceJavaSpringTemplate = `
 
 data "cloudfoundry_domain" "local" {
@@ -974,6 +1009,76 @@ func TestAccApp_bluegreen_shutdown_wait(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckResourceAttr(refApp, "service_binding.#", "2"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+			},
+		})
+}
+
+func TestAccApp_bluegreen_url_docker_switch(t *testing.T) {
+
+	refApp := "cloudfoundry_app.java-spring"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`docker_image = "cloudfoundry/diego-docker-app:latest"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckNoResourceAttr(refApp, "route.#"),
 						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
 					),
