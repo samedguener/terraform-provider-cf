@@ -386,7 +386,6 @@ func resourceApp() *schema.Resource {
 				ValidateFunc: validateAppDeposedMapEmpty,
 			},
 		},
-		
 	}
 }
 
@@ -539,7 +538,7 @@ func resourceAppCreateCfApp(d *schema.ResourceData, meta interface{}, appConfig 
 		serviceBindings    []map[string]interface{}
 		hasServiceBindings bool
 
-		routeConfig map[string]interface{}
+		routeConfig    map[string]interface{}
 		hasRouteConfig bool
 	)
 

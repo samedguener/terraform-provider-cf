@@ -611,70 +611,70 @@ func TestAccAppVersions_app1(t *testing.T) {
 
 func TestAccApp_app1(t *testing.T) {
 
-		refApp := "cloudfoundry_app.java-spring"
+	refApp := "cloudfoundry_app.java-spring"
 
-		resource.Test(t,
-			resource.TestCase{
-				PreCheck:     func() { testAccPreCheck(t) },
-				Providers:    testAccProviders,
-				CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
-				Steps: []resource.TestStep{
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
+			Steps: []resource.TestStep{
 
-					resource.TestStep{
-						Config: fmt.Sprintf(appResourceJavaSpring, defaultAppDomain()),
-						Check: resource.ComposeTestCheckFunc(
-							testAccCheckAppExists(refApp, func() (err error) {
+				resource.TestStep{
+					Config: fmt.Sprintf(appResourceJavaSpring, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
 
-								if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
-									return err
-								}
-								return
-							}),
-							resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
-							resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
-							resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
-							resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-							resource.TestCheckResourceAttr(refApp, "instances", "1"),
-							resource.TestCheckResourceAttr(refApp, "memory", "768"),
-							resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
-							resource.TestCheckResourceAttrSet(refApp, "stack"),
-							resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
-							resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
-							resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
-							resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
-							resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
-							resource.TestCheckResourceAttr(refApp, "service_binding.#", "2"),
-						),
-					},
-
-					resource.TestStep{
-						Config: fmt.Sprintf(appResourceJavaSpringUpdate, defaultAppDomain()),
-						Check: resource.ComposeTestCheckFunc(
-							testAccCheckAppExists(refApp, func() (err error) {
-
-								if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
-									return err
-								}
-								return
-							}),
-							resource.TestCheckResourceAttr(refApp, "name", "java-spring-updated"),
-							resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
-							resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
-							resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
-							resource.TestCheckResourceAttr(refApp, "instances", "2"),
-							resource.TestCheckResourceAttr(refApp, "memory", "1024"),
-							resource.TestCheckResourceAttr(refApp, "disk_quota", "1024"),
-							resource.TestCheckResourceAttrSet(refApp, "stack"),
-							resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
-							resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
-							resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
-							resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
-							resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
-							resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
-						),
-					},
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
+						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
+						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckResourceAttr(refApp, "service_binding.#", "2"),
+					),
 				},
-			})
+
+				resource.TestStep{
+					Config: fmt.Sprintf(appResourceJavaSpringUpdate, defaultAppDomain()),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring-updated"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
+						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "2"),
+						resource.TestCheckResourceAttr(refApp, "memory", "1024"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "1024"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "2"),
+						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_1", "testval1"),
+						resource.TestCheckResourceAttr(refApp, "environment.TEST_VAR_2", "testval2"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckResourceAttr(refApp, "service_binding.#", "3"),
+					),
+				},
+			},
+		})
 }
 
 func TestAccApp_bluegreen(t *testing.T) {
@@ -727,8 +727,8 @@ func TestAccApp_bluegreen(t *testing.T) {
 
 				resource.TestStep{
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
-									``,
-									`instances = 3
+						``,
+						`instances = 3
 									blue_green {
 										enable = true
 									}
@@ -741,7 +741,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 									routes {
 										route = "${cloudfoundry_route.java-spring.id}"
 									}`,
-									),
+					),
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
 
@@ -769,12 +769,12 @@ func TestAccApp_bluegreen(t *testing.T) {
 
 				resource.TestStep{
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
-									`resource "cloudfoundry_service_instance" "fs2" {
+						`resource "cloudfoundry_service_instance" "fs2" {
 										name = "fs2"
 										space = "${data.cloudfoundry_space.space.id}"
 										service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
 									}`,
-									`instances = 4
+						`instances = 4
 									blue_green {
 										enable = true
 									}
@@ -790,7 +790,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 									routes {
 										route = "${cloudfoundry_route.java-spring.id}"
 									}`,
-									),
+					),
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
 
@@ -822,7 +822,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 					//       with updating the app resource
 					// Relevant Issue: https://github.com/hashicorp/terraform/issues/8617
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceJavaSpringTemplate, defaultAppDomain()),
-									`resource "cloudfoundry_service_instance" "fs2" {
+						`resource "cloudfoundry_service_instance" "fs2" {
 										name = "fs2"
 										space = "${data.cloudfoundry_space.space.id}"
 										service_plan = "${data.cloudfoundry_service.rmq.service_plans.standard}"
@@ -832,7 +832,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 										space = "${data.cloudfoundry_space.space.id}"
 										hostname = "java-spring-2"
 									}`,
-									`instances = 2
+						`instances = 2
 									blue_green {
 										enable = true
 									}
@@ -845,7 +845,7 @@ func TestAccApp_bluegreen(t *testing.T) {
 									routes {
 										route = "${cloudfoundry_route.java-spring-2.id}"
 									}`,
-									),
+					),
 					Check: resource.ComposeAggregateTestCheckFunc(
 						func(*terraform.State) error {
 							testAccProvider.Meta().(*cfapi.Session).Log.DebugMessage("Checking if there was observed app downtime...")
