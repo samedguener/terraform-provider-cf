@@ -807,7 +807,7 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	//       service bindings are updates?)
 	app.DockerImage = getChangedValueString("docker_image", &update, d)
 	app.DockerCredentials = getChangedValueMap("docker_credentials", &update, d)
-	if *app.DockerImage == "" {
+	if app.DockerImage != nil && *app.DockerImage == "" {
 		app.DockerImage = nil
 	}
 
