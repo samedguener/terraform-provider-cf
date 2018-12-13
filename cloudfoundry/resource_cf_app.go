@@ -795,7 +795,6 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 
 	restage := false // for changes where a full restage is required
 	app.Buildpack = getChangedValueString("buildpack", &restage, d)
-	app.StackGUID = getChangedValueString("stack", &restage, d)
 	app.Environment = getChangedValueMap("environment", &restage, d)
 
 	// Notes about docker images
