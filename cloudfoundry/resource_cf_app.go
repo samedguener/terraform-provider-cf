@@ -809,6 +809,9 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	if app.DockerImage != nil && *app.DockerImage == "" {
 		app.DockerImage = nil
 	}
+	if app.DockerImage != nil && d.HasChange("docker_image") {
+		app.Ports = nil
+	}
 
 	blueGreen := false
 	if v, ok := d.GetOk("blue_green"); ok {
