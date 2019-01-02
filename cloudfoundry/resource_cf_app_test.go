@@ -1030,8 +1030,7 @@ func TestAccApp_bluegreen_url_docker_switch(t *testing.T) {
 
 				resource.TestStep{
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
-						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"
-						buildpack = "https://github.com/cloudfoundry/java-buildpack.git"`,
+						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"`,
 					),
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
