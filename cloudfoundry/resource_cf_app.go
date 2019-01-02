@@ -804,8 +804,8 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	// TODO: test what happens with diego when other attributes are changed and update
 	//       code appropriately (for example, does it restage/restart on its own when
 	//       service bindings are updates?)
-	app.DockerImage = getChangedValueString("docker_image", &update, d)
-	app.DockerCredentials = getChangedValueMap("docker_credentials", &update, d)
+	app.DockerImage = getChangedValueString("docker_image", &restage, d)
+	app.DockerCredentials = getChangedValueMap("docker_credentials", &restage, d)
 	if app.DockerImage != nil && *app.DockerImage == "" {
 		app.DockerImage = nil
 	}
