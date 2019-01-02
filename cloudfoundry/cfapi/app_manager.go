@@ -297,6 +297,9 @@ func (am *AppManager) StartApp(appID string, timeout time.Duration) (err error) 
 		app.State = &AppStarted
 		// Maps are not set nit, set nil manually
 		app.DockerCredentials = nil
+		if app.DockerImage != nil && *app.DockerImage != ""{
+			app.StackGUID = nil
+		}
 		if app, err = am.UpdateApp(app); err != nil {
 			return err
 		}
