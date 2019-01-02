@@ -1331,8 +1331,14 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 		if err := am.StopApp(app.ID, timeout); err != nil {
 			return err
 		}
-		if err := am.StartApp(app.ID, timeout); err != nil {
-			return err
+		if _, ok := d.GetOk("docker_image"); ok {
+			if err := am.StartDockerApp(app.ID, timeout); err != nil {
+				return err
+			}
+		} else {
+			if err := am.StartApp(app.ID, timeout); err != nil {
+				return err
+			}
 		}
 	}
 
