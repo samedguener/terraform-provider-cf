@@ -485,8 +485,11 @@ func (am *AppManager) StopApp(appID string, timeout time.Duration) (err error) {
 		return err
 	}
 	// set to DockerCredentials = nil if this is not a docker image
+	// set StackGUID to nil if it is a docker image to avoid lifecycle error
 	if app.DockerImage == nil {
 		app.DockerCredentials = nil
+	} else {
+		app.StackGUID = nil
 	}
 
 	if app.State != nil && *app.State == AppStarted {

@@ -1030,7 +1030,7 @@ func TestAccApp_bluegreen_url_docker_switch(t *testing.T) {
 
 				resource.TestStep{
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
-						`docker_image = "cloudfoundry/diego-docker-app:latest"`,
+						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"`,
 					),
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
@@ -1058,7 +1058,72 @@ func TestAccApp_bluegreen_url_docker_switch(t *testing.T) {
 
 				resource.TestStep{
 					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
-						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"`,
+						`docker_image = "xilinlisap/diego-docker-app:1.0"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app:1.1"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+			},
+		})
+}
+
+func TestAccApp_bluegreen_docker_update(t *testing.T) {
+
+	refApp := "cloudfoundry_app.java-spring"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app:1.0"`,
 					),
 					Check: resource.ComposeTestCheckFunc(
 						testAccCheckAppExists(refApp, func() (err error) {
@@ -1072,6 +1137,170 @@ func TestAccApp_bluegreen_url_docker_switch(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
 						resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app:1.1"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						//resource.TestCheckResourceAttr(refApp, "ports.#", "1"),
+						//resource.TestCheckResourceAttr(refApp, "ports.8080", "8080"),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+			},
+		})
+}
+
+func TestAccApp_docker_stopped_update(t *testing.T) {
+
+	refApp := "cloudfoundry_app.java-spring"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app:1.0"
+							stopped = "true"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 404, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app:1.0"
+						stopped = "false"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+			},
+		})
+}
+
+func TestAccApp_url_stopped_update(t *testing.T) {
+
+	refApp := "cloudfoundry_app.java-spring"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"java-spring"}),
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"
+							stopped = "true"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 404, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(refApp, "memory", "768"),
+						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),
+						resource.TestCheckResourceAttrSet(refApp, "stack"),
+						resource.TestCheckResourceAttr(refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
+						resource.TestCheckNoResourceAttr(refApp, "route.#"),
+						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourceUrlDockerTemplate, defaultAppDomain()),
+						`url = "file://../tests/cf-acceptance-tests/assets/java-spring/java-spring.jar"
+						stopped = "false"`,
+					),
+					Check: resource.ComposeTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://java-spring."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(refApp, "name", "java-spring"),
+						resource.TestCheckResourceAttr(refApp, "space", defaultPcfDevSpaceID()),
 						resource.TestCheckResourceAttr(refApp, "instances", "1"),
 						resource.TestCheckResourceAttr(refApp, "memory", "768"),
 						resource.TestCheckResourceAttr(refApp, "disk_quota", "512"),

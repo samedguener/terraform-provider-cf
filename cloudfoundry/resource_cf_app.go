@@ -804,8 +804,8 @@ func resourceAppUpdate(d *schema.ResourceData, meta interface{}) (err error) {
 	// TODO: test what happens with diego when other attributes are changed and update
 	//       code appropriately (for example, does it restage/restart on its own when
 	//       service bindings are updates?)
-	app.DockerImage = getChangedValueString("docker_image", &update, d)
-	app.DockerCredentials = getChangedValueMap("docker_credentials", &update, d)
+	app.DockerImage = getChangedValueString("docker_image", &restage, d)
+	app.DockerCredentials = getChangedValueMap("docker_credentials", &restage, d)
 	if app.DockerImage != nil && *app.DockerImage == "" {
 		app.DockerImage = nil
 	}
@@ -1331,8 +1331,14 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 		if err := am.StopApp(app.ID, timeout); err != nil {
 			return err
 		}
-		if err := am.StartApp(app.ID, timeout); err != nil {
-			return err
+		if _, ok := d.GetOk("docker_image"); ok {
+			if err := am.StartDockerApp(app.ID, timeout); err != nil {
+				return err
+			}
+		} else {
+			if err := am.StartApp(app.ID, timeout); err != nil {
+				return err
+			}
 		}
 	}
 
@@ -1343,8 +1349,14 @@ func resourceAppStandardUpdate(d *schema.ResourceData, meta interface{}, app cfa
 				return err
 			}
 		} else {
-			if err := am.StartApp(app.ID, timeout); err != nil {
-				return err
+			if _, ok := d.GetOk("docker_image"); ok {
+				if err := am.StartDockerApp(app.ID, timeout); err != nil {
+					return err
+				}
+			} else {
+				if err := am.StartApp(app.ID, timeout); err != nil {
+					return err
+				}
 			}
 		}
 	}
