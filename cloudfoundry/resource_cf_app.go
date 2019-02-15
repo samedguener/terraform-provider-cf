@@ -1683,7 +1683,10 @@ func removeServiceBindings(delete []map[string]interface{},
 		if len(bindingID) > 0 {
 			log.DebugMessage("Deleting binding with id '%s' for service instance '%s'.", bindingID, serviceInstanceID)
 			if err := am.DeleteServiceBinding(bindingID); err != nil {
-				return err
+				if !strings.Contains(err.Error(), "status code: 404") {
+					return err
+				}
+				err = nil
 			}
 		} else {
 			log.DebugMessage("Ignoring binding for service instance '%s' as no corresponding binding id was found.", serviceInstanceID)
