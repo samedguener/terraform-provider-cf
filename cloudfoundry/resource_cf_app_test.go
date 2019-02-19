@@ -312,6 +312,37 @@ resource "cloudfoundry_app" "test-docker-app" {
 
 `
 
+const appResourcePrivateDocker = `
+
+data "cloudfoundry_domain" "local" {
+	name = "%s"
+}
+data "cloudfoundry_org" "org" {
+	name = "pcfdev-org"
+}
+data "cloudfoundry_space" "space" {
+	name = "pcfdev-space"
+	org = "${data.cloudfoundry_org.org.id}"
+}
+
+resource "cloudfoundry_route" "test-docker-app" {
+	domain = "${data.cloudfoundry_domain.local.id}"
+	space = "${data.cloudfoundry_space.space.id}"
+	hostname = "test-docker-app"
+	target {
+		app = "${cloudfoundry_app.test-docker-app.id}"
+		port = 8080
+	}
+}
+resource "cloudfoundry_app" "test-docker-app" {
+	name = "test-docker-app"
+	space = "${data.cloudfoundry_space.space.id}"
+%%s
+	timeout = 900
+}
+
+`
+
 const multipleVersion = `
 data "cloudfoundry_domain" "local" {
 	name = "%s"
@@ -1242,6 +1273,80 @@ func TestAccApp_docker_stopped_update(t *testing.T) {
 						resource.TestCheckResourceAttr(refApp, "health_check_type", "port"),
 						resource.TestCheckNoResourceAttr(refApp, "route.#"),
 						resource.TestCheckResourceAttr(refApp, "routes.#", "1"),
+					),
+				},
+			},
+		})
+}
+
+func TestAccApp_private_dockerApp(t *testing.T) {
+	refApp := "cloudfoundry_app.test-docker-app"
+
+	resource.Test(t,
+		resource.TestCase{
+			PreCheck:     func() { testAccPreCheck(t) },
+			Providers:    testAccProviders,
+			CheckDestroy: testAccCheckAppDestroyed([]string{"test-docker-app"}),
+			Steps: []resource.TestStep{
+
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourcePrivateDocker, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app-private:1.0"
+						docker_credentials = {
+							username = "xilinlisap"
+							password = "0Fsv20!02QwX"
+						}`,
+					),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://test-docker-app."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(
+							refApp, "name", "test-docker-app"),
+						resource.TestCheckResourceAttr(
+							refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(
+							refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(
+							refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(
+							refApp, "docker_image", "xilinlisap/diego-docker-app-private:1.0"),
+					),
+				},
+				resource.TestStep{
+					Config: fmt.Sprintf(fmt.Sprintf(appResourcePrivateDocker, defaultAppDomain()),
+						`docker_image = "xilinlisap/diego-docker-app-private:1.1"
+						docker_credentials = {
+							username = "xilinlisap"
+							password = "0Fsv20!02QwX"
+						}`,
+					),
+					Check: resource.ComposeAggregateTestCheckFunc(
+						testAccCheckAppExists(refApp, func() (err error) {
+
+							if err = assertHTTPResponse("https://test-docker-app."+defaultAppDomain(), 200, nil); err != nil {
+								return err
+							}
+							return
+						}),
+						resource.TestCheckResourceAttr(
+							refApp, "name", "test-docker-app"),
+						resource.TestCheckResourceAttr(
+							refApp, "space", defaultPcfDevSpaceID()),
+						resource.TestCheckResourceAttr(
+							refApp, "instances", "1"),
+						resource.TestCheckResourceAttr(
+							refApp, "environment.%", "0"),
+						resource.TestCheckResourceAttr(
+							refApp, "enable_ssh", "true"),
+						resource.TestCheckResourceAttr(
+							refApp, "docker_image", "xilinlisap/diego-docker-app-private:1.1"),
 					),
 				},
 			},
