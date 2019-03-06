@@ -328,7 +328,9 @@ func (am *AppManager) StartDockerApp(appID string, timeout time.Duration) (err e
 			return err
 		}
 
-		err = am.WaitForAppToStart(startApp, timeout)
+		if err = am.WaitForAppToStart(app, timeout); err != nil {
+			return err
+		}
 	}
 	return nil
 }
