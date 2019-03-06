@@ -728,11 +728,38 @@ func resourceAppRead(d *schema.ResourceData, meta interface{}) (err error) {
 	} else if routeState, hasNewRoutes := d.GetOk("routes"); hasNewRoutes {
 		routesList := routeState.(*schema.Set).List()
 		var updatedRoutes []interface{}
+		var appRouteMappings []map[string]interface{}
+		if appRouteMappings, err = rm.ReadRouteMappingsByApp(app.ID); err != nil {
+			return err
+		}
 		for _, r := range routesList {
 			stateData := r.(map[string]interface{})
 			if mappingID, ok := stateData["mapping_id"].(string); ok && len(mappingID) > 0 {
 				if mapping, err := rm.ReadRouteMapping(mappingID); err != nil {
-					return err
+					if !strings.Contains(err.Error(), "status code: 404") {
+						return err
+					}
+					session.Log.DebugMessage("Route mapping %s is missing, searching for the replacement", mappingID)
+					replacementFound := false
+					for _, routeMapping := range appRouteMappings {
+						if routeMapping["route"] == stateData["route"] {
+							session.Log.DebugMessage("Replacement route mapping %s is found", routeMapping["mapping_id"])
+							refreshedData := map[string]interface{}{
+								"mapping_id": routeMapping["mapping_id"],
+								"port":       routeMapping["port"],
+								"route":      routeMapping["route"],
+							}
+							if stateRouteID, ok := stateData["route"].(string); ok && len(stateRouteID) > 0 {
+								refreshedData["exclusive"] = stateData["exclusive"]
+							}
+							updatedRoutes = append(updatedRoutes, refreshedData)
+							replacementFound = true
+							break
+						}
+					}
+					if !replacementFound{
+						session.Log.DebugMessage("No replacement route mapping found! Delete route mapping %s from .tfstate!", mappingID)
+					}
 				} else {
 					if mapping.AppID != appID {
 						// this should never happen!
