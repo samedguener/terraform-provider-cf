@@ -335,6 +335,55 @@ func (am *AppManager) StartDockerApp(appID string, timeout time.Duration) (err e
 	return nil
 }
 
+// StopApp -
+func (am *AppManager) StopDockerApp(appID string, timeout time.Duration) (err error) {
+
+	var app CCApp
+	var startApp CCApp
+
+	if app, err = am.ReadApp(appID); err != nil {
+		return err
+	}
+
+	if app.State != nil && *app.State == AppStarted {
+		startApp.ID = app.ID
+		startApp.Name = app.Name
+		startApp.State = &AppStopped
+
+		if app, err = am.UpdateApp(startApp); err != nil {
+			return err
+		}
+
+		c := make(chan error)
+		go func() {
+
+			var ferr error
+
+			for {
+				time.Sleep(appStatePingSleep)
+				if app, ferr = am.ReadApp(app.ID); err != nil {
+					c <- ferr
+					break
+				}
+				if app.State != nil && *app.State == "STOPPED" {
+					c <- nil
+					break
+				}
+			}
+		}()
+
+		select {
+		case err = <-c:
+			if err != nil {
+				return err
+			}
+		case <-time.After(timeout):
+			return fmt.Errorf("app %s failed to stop after %d seconds", app.Name, timeout/time.Second)
+		}
+	}
+	return nil
+}
+
 // WaitForAppToStart -
 func (am *AppManager) WaitForAppToStart(app CCApp, timeout time.Duration) (err error) {
 
